@@ -5,11 +5,13 @@ import uvicorn
 import logging
 import traceback
 from utils.image_processing import process_uploaded_image
-from services import face_detection, head_detection, body_detection
+from services.face_detection import FaceDetector
+from services.head_detection import HeadDetector
+from services.body_detection import BodyDetector
 
 logging.basicConfig(
     filename='server.log',
-    level=logging.ERROR,
+    level=logging.INFO,  # Changed to INFO for more detailed logging
     format='%(asctime)s - %(levelname)s - %(message)s'
 )
 
@@ -23,57 +25,72 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
-@app.post('/detect')
-async def detect_regions(files: List[UploadFile] = File(..., min_items=2)):
-    try:
-        # Validate input files
-        def _validate_detection(results):
-            if any(isinstance(item, str) and 'error' in item for item in results):
-                raise ValueError('Invalid detection results from service')
-            return results
+# Initialize detectors
+face_detector = FaceDetector()
+head_detector = HeadDetector()
+body_detector = BodyDetector()
 
+@app.post('/detect')
+async def detect_regions(files: List[UploadFile] = File(...)):
+    try:
+        if len(files) < 2:
+            raise HTTPException(
+                status_code=400, 
+                detail="At least one reference image and one generated image are required"
+            )
+        
+        logging.info(f"Processing {len(files)} files")
+            
         # Process all reference images first
         reference_results = []
-        for file in files[:-1]:  # All except last file are references
+        for i, file in enumerate(files[:-1]):  # All except last file are references
             try:
+                logging.info(f"Processing reference image {i+1}: {file.filename}")
                 image = await process_uploaded_image(file)
-                try:
-                    reference_results.append({
-                        'face': _validate_detection(face_detection.detect_faces(image)),
-                        'head': head_detection.detect_head(image),
-                        'body': body_detection.detect_body(image)
-                    })
-                except Exception as e:
-                    logging.error(f"Detection failed: {str(e)}")
-                    raise HTTPException(status_code=500, detail=f"Detection error: {str(e)}")
+                
+                face_results = face_detector.detect_faces(image)
+                head_results = head_detector.detect_head(image)
+                body_results = body_detector.detect_body(image)
+                
+                reference_results.append({
+                    'face': face_results,
+                    'head': head_results,
+                    'body': body_results
+                })
+                
+                logging.info(f"Reference image {i+1} processed successfully")
             except Exception as e:
-                logging.error(f"Image processing failed: {str(e)}")
-                raise HTTPException(status_code=400, detail=str(e))
+                logging.error(f"Image processing failed for {file.filename}: {str(e)}")
+                logging.error(traceback.format_exc())
+                raise HTTPException(status_code=400, detail=f"Error processing reference image {i+1}: {str(e)}")
         
         # Process generated image (last file)
-        generated_image = await process_uploaded_image(files[-1])
-        generated_result = {
-            'face': face_detection.detect_faces(generated_image),
-            'head': head_detection.detect_head(generated_image),
-            'body': body_detection.detect_body(generated_image)
-        }
-        
-        def _validate_detection(results):
-            if any(isinstance(item, str) and 'error' in item for item in results):
-                raise ValueError('Invalid detection results from service')
-            return results
+        try:
+            logging.info(f"Processing generated image: {files[-1].filename}")
+            generated_image = await process_uploaded_image(files[-1])
+            
+            generated_result = {
+                'face': face_detector.detect_faces(generated_image),
+                'head': head_detector.detect_head(generated_image),
+                'body': body_detector.detect_body(generated_image)
+            }
+            
+            logging.info("Generated image processed successfully")
+        except Exception as e:
+            logging.error(f"Failed to process generated image: {str(e)}")
+            logging.error(traceback.format_exc())
+            raise HTTPException(status_code=400, detail=f"Error processing generated image: {str(e)}")
 
         return {
             'reference_results': reference_results,
             'generated_result': generated_result
         }
+    except HTTPException:
+        # Re-raise HTTP exceptions
+        raise
     except Exception as e:
-        logging.error(f"Error processing upload: {str(e)}\n{traceback.format_exc()}")
-        def _validate_detection(results):
-            if any(isinstance(item, str) and 'error' in item for item in results):
-                raise ValueError('Invalid detection results from service')
-            return results
-
+        logging.error(f"Unexpected error processing upload: {str(e)}")
+        logging.error(traceback.format_exc())
         return {'error': 'Failed to process images. Please check server.log for details.'}
 
 if __name__ == '__main__':

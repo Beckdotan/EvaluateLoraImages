@@ -9,55 +9,99 @@ function Home() {
   const [generatedImage, setGeneratedImage] = useState(null)
   const [isUploading, setIsUploading] = useState(false)
   const [error, setError] = useState('')
+  const [isConverting, setIsConverting] = useState(false)
   const navigate = useNavigate()
 
-  const handleReferenceImageDrop = async (acceptedFiles) => {
-    setError('')
-    // Create preview URLs for the dropped files
-    const newImages = await Promise.all(acceptedFiles.map(async (file) => {
-  let convertedFile = file;
-  
-  if (file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic')) {
-    const jpegBlob = await heic2any({
-      blob: file,
-      toType: 'image/jpeg',
-      quality: 0.8
-    });
-    
-    convertedFile = new File([jpegBlob], file.name.replace(/\.heic$/i, '.jpg'), {
-      type: 'image/jpeg',
-      lastModified: Date.now()
-    });
+  // Helper function to check if a file is HEIC
+  const isHeicFile = (file) => {
+    return file.type === 'image/heic' || 
+           file.type === 'image/heif' || 
+           file.name.toLowerCase().endsWith('.heic') || 
+           file.name.toLowerCase().endsWith('.heif');
   }
 
-  return Object.assign(convertedFile, {
-    preview: URL.createObjectURL(convertedFile)
-  });
-}))
-    setReferenceImages([...referenceImages, ...newImages])
+  // Helper function to convert HEIC to JPEG
+  const convertHeicToJpeg = async (file) => {
+    try {
+      const jpegBlob = await heic2any({
+        blob: file,
+        toType: 'image/jpeg',
+        quality: 0.8
+      });
+      
+      // If the result is an array (multiple images), take the first one
+      const blob = Array.isArray(jpegBlob) ? jpegBlob[0] : jpegBlob;
+      
+      return new File([blob], file.name.replace(/\.(heic|heif)$/i, '.jpg'), {
+        type: 'image/jpeg',
+        lastModified: Date.now()
+      });
+    } catch (error) {
+      console.error('HEIC conversion error:', error);
+      throw new Error(`Failed to convert HEIC image: ${error.message}. Please try converting it to JPEG manually.`);
+    }
+  }
+
+  const handleReferenceImageDrop = async (acceptedFiles) => {
+    setError('');
+    setIsConverting(true);
+    
+    try {
+      // Process files in parallel
+      const newImages = await Promise.all(acceptedFiles.map(async (file) => {
+        try {
+          let processedFile = file;
+          
+          // Convert HEIC files to JPEG
+          if (isHeicFile(file)) {
+            processedFile = await convertHeicToJpeg(file);
+          }
+          
+          // Create preview URL
+          return Object.assign(processedFile, {
+            preview: URL.createObjectURL(processedFile)
+          });
+        } catch (error) {
+          console.error(`Error processing file ${file.name}:`, error);
+          setError(error.message);
+          return null;
+        }
+      }));
+      
+      // Filter out any null values from failed conversions
+      const validImages = newImages.filter(img => img !== null);
+      setReferenceImages([...referenceImages, ...validImages]);
+    } catch (error) {
+      console.error('Error processing dropped files:', error);
+      setError('Error processing images. Please try again with different files.');
+    } finally {
+      setIsConverting(false);
+    }
   }
 
   const handleGeneratedImageDrop = async (acceptedFiles) => {
-    setError('')
+    setError('');
+    
     if (acceptedFiles.length > 0) {
-      let file = acceptedFiles[0];
+      setIsConverting(true);
       
-      if (file.type === 'image/heic' || file.name.toLowerCase().endsWith('.heic')) {
-        const jpegBlob = await heic2any({
-          blob: file,
-          toType: 'image/jpeg',
-          quality: 0.8
-        });
+      try {
+        let file = acceptedFiles[0];
         
-        file = new File([jpegBlob], file.name.replace(/\.heic$/i, '.jpg'), {
-          type: 'image/jpeg',
-          lastModified: Date.now()
-        });
+        // Convert HEIC file to JPEG if necessary
+        if (isHeicFile(file)) {
+          file = await convertHeicToJpeg(file);
+        }
+        
+        setGeneratedImage(Object.assign(file, {
+          preview: URL.createObjectURL(file)
+        }));
+      } catch (error) {
+        console.error('Error processing generated image:', error);
+        setError(error.message);
+      } finally {
+        setIsConverting(false);
       }
-
-      setGeneratedImage(Object.assign(file, {
-        preview: URL.createObjectURL(file)
-      }))
     }
   }
 
@@ -96,12 +140,16 @@ function Home() {
     try {
       // Create FormData and append all images
       const formData = new FormData()
-      // Append all reference images with 'files' parameter name
+      
+      // Append all reference images
       referenceImages.forEach((img) => {
         formData.append('files', img)
       })
-      // Append generated image with 'files' parameter name
+      
+      // Append generated image (should be the last file)
       formData.append('files', generatedImage)
+      
+      console.log('Uploading images...');
       
       // Make API call to server
       const response = await fetch('http://localhost:8000/detect', {
@@ -109,23 +157,29 @@ function Home() {
         body: formData
       })
       
+      const data = await response.json()
+      
       if (!response.ok) {
-        throw new Error('Server returned an error')
+        throw new Error(data.detail || 'Server returned an error')
       }
       
-      const evaluationResult = await response.json()
+      if (data.error) {
+        throw new Error(data.error)
+      }
+
+      console.log('Received data:', data);
       
       // Navigate to gallery page with results
       navigate('/gallery', { 
         state: { 
           referenceImages: referenceImages.map(img => ({ url: img.preview })),
           generatedImage: { url: generatedImage.preview },
-          evaluationResult
+          evaluationResult: data
         } 
       })
     } catch (err) {
       console.error('Upload error:', err)
-      setError('Failed to upload images. Please try again.')
+      setError(`Failed to upload images: ${err.message}`)
     } finally {
       setIsUploading(false)
     }
@@ -149,19 +203,22 @@ function Home() {
             <Dropzone 
               onDrop={handleReferenceImageDrop}
               accept={{
-                'image/*': ['.jpeg', '.jpg', '.png', '.heic'],
-                'image/heic': ['.heic']
+                'image/*': ['.jpeg', '.jpg', '.png', '.heic', '.heif']
               }}
               maxFiles={15}
-              disabled={referenceImages.length >= 15 || isUploading}
+              disabled={referenceImages.length >= 15 || isUploading || isConverting}
             >
               {({getRootProps, getInputProps}) => (
                 <div 
                   {...getRootProps()} 
-                  className={`dropzone ${referenceImages.length >= 5 ? 'dropzone-disabled' : ''}`}
+                  className={`dropzone ${referenceImages.length >= 15 || isConverting ? 'dropzone-disabled' : ''}`}
                 >
                   <input {...getInputProps()} />
-                  <p>Drag & drop reference images here, or click to select files</p>
+                  {isConverting ? (
+                    <p>Converting HEIC images, please wait...</p>
+                  ) : (
+                    <p>Drag & drop reference images here, or click to select files</p>
+                  )}
                 </div>
               )}
             </Dropzone>
@@ -175,7 +232,7 @@ function Home() {
                       type="button" 
                       className="remove-btn"
                       onClick={() => removeReferenceImage(index)}
-                      disabled={isUploading}
+                      disabled={isUploading || isConverting}
                     >
                       ×
                     </button>
@@ -192,16 +249,19 @@ function Home() {
             <Dropzone 
               onDrop={handleGeneratedImageDrop}
               accept={{
-                'image/*': ['.jpeg', '.jpg', '.png', '.heic'],
-                'image/heic': ['.heic']
+                'image/*': ['.jpeg', '.jpg', '.png', '.heic', '.heif']
               }}
               maxFiles={1}
-              disabled={isUploading}
+              disabled={isUploading || isConverting}
             >
               {({getRootProps, getInputProps}) => (
                 <div {...getRootProps()} className="dropzone">
                   <input {...getInputProps()} />
-                  <p>Drag & drop generated image here, or click to select file</p>
+                  {isConverting ? (
+                    <p>Converting HEIC image, please wait...</p>
+                  ) : (
+                    <p>Drag & drop generated image here, or click to select file</p>
+                  )}
                 </div>
               )}
             </Dropzone>
@@ -214,7 +274,7 @@ function Home() {
                     type="button" 
                     className="remove-btn"
                     onClick={removeGeneratedImage}
-                    disabled={isUploading}
+                    disabled={isUploading || isConverting}
                   >
                     ×
                   </button>
@@ -227,9 +287,9 @@ function Home() {
             <button 
               type="submit" 
               className="btn submit-btn"
-              disabled={isUploading || referenceImages.length === 0 || !generatedImage}
+              disabled={isUploading || isConverting || referenceImages.length === 0 || !generatedImage}
             >
-              {isUploading ? 'Uploading...' : 'Evaluate Images'}
+              {isUploading ? 'Uploading...' : isConverting ? 'Converting...' : 'Evaluate Images'}
             </button>
           </div>
         </form>

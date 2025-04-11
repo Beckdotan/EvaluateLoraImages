@@ -1,24 +1,33 @@
 import { useState, useEffect, useRef } from 'react';
+import { useLocation } from 'react-router-dom';
 import './Gallery.css';
 import { mapDetectionCoordinates } from '../utils/detectionUtils';
 
-function Gallery({ referenceImages, generatedImage }) {
+function Gallery() {
+  const location = useLocation();
+  const { referenceImages, generatedImage, evaluationResult } = location.state || {};
+  
   const [showFaces, setShowFaces] = useState(true);
   const [showHeads, setShowHeads] = useState(true);
   const [showBodies, setShowBodies] = useState(true);
   const canvasRef = useRef(null);
   const imgRef = useRef(null);
 
-  // Sample detection data structure
-  const [evaluationResult] = useState({
-    face: [{ coordinates: [100, 100, 200, 200], confidence: 0.95 }],
-    head: [{ coordinates: [80, 80, 220, 220] }],
-    body: [{ coordinates: [50, 50, 250, 250] }]
-  });
-
-  if (!referenceImages || !generatedImage) {
-    return <div>No images to display. Please upload images first.</div>;
+  if (!referenceImages || !generatedImage || !evaluationResult) {
+    return (
+      <div className="gallery-container">
+        <h2>No images to display</h2>
+        <p>Please upload images on the home page first.</p>
+      </div>
+    );
   }
+
+  // Extract the evaluation data from the server response
+  const generatedDetections = evaluationResult.generated_result || {
+    face: [],
+    head: [],
+    body: []
+  };
 
   useEffect(() => {
     const canvas = canvasRef.current;
@@ -26,36 +35,69 @@ function Gallery({ referenceImages, generatedImage }) {
     const img = imgRef.current;
 
     if (img && canvas) {
-      canvas.width = img.offsetWidth;
-      canvas.height = img.offsetHeight;
+      // Wait for the image to be fully loaded
+      const handleImageLoad = () => {
+        canvas.width = img.offsetWidth;
+        canvas.height = img.offsetHeight;
+        
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+        // Draw face detections
+        if (showFaces && generatedDetections.face && generatedDetections.face.length > 0) {
+          generatedDetections.face.forEach(detection => {
+            if (detection.coordinates) {
+              const [x1, y1, x2, y2] = mapDetectionCoordinates(img, detection.coordinates);
+              ctx.strokeStyle = '#FF0000';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(x1, y1, x2-x1, y2-y1);
+              
+              // Add confidence text if available
+              if (detection.confidence) {
+                ctx.fillStyle = '#FF0000';
+                ctx.font = '12px Arial';
+                ctx.fillText(`${Math.round(detection.confidence * 100)}%`, x1, y1 - 5);
+              }
+            }
+          });
+        }
+
+        // Draw head detections
+        if (showHeads && generatedDetections.head && generatedDetections.head.length > 0) {
+          generatedDetections.head.forEach(detection => {
+            if (detection.coordinates) {
+              const [x1, y1, x2, y2] = mapDetectionCoordinates(img, detection.coordinates);
+              ctx.strokeStyle = '#00FF00';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(x1, y1, x2-x1, y2-y1);
+            }
+          });
+        }
+
+        // Draw body detections
+        if (showBodies && generatedDetections.body && generatedDetections.body.length > 0) {
+          generatedDetections.body.forEach(detection => {
+            if (detection.coordinates) {
+              const [x1, y1, x2, y2] = mapDetectionCoordinates(img, detection.coordinates);
+              ctx.strokeStyle = '#0000FF';
+              ctx.lineWidth = 2;
+              ctx.strokeRect(x1, y1, x2-x1, y2-y1);
+            }
+          });
+        }
+      };
       
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-
-      // Draw face detections
-      showFaces && evaluationResult.face.forEach(detection => {
-        const [x1, y1, x2, y2] = mapDetectionCoordinates(img, detection.coordinates);
-        ctx.strokeStyle = '#FF0000';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x1, y1, x2-x1, y2-y1);
-      });
-
-      // Draw head detections
-      showHeads && evaluationResult.head.forEach(detection => {
-        const [x1, y1, x2, y2] = mapDetectionCoordinates(img, detection.coordinates);
-        ctx.strokeStyle = '#00FF00';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x1, y1, x2-x1, y2-y1);
-      });
-
-      // Draw body detections
-      showBodies && evaluationResult.body.forEach(detection => {
-        const [x1, y1, x2, y2] = mapDetectionCoordinates(img, detection.coordinates);
-        ctx.strokeStyle = '#0000FF';
-        ctx.lineWidth = 2;
-        ctx.strokeRect(x1, y1, x2-x1, y2-y1);
-      });
+      if (img.complete) {
+        handleImageLoad();
+      } else {
+        img.onload = handleImageLoad;
+      }
     }
-  }, [showFaces, showHeads, showBodies, evaluationResult]);
+  }, [showFaces, showHeads, showBodies, generatedDetections]);
+
+  // Count the number of detections
+  const faceCount = generatedDetections.face?.length || 0;
+  const headCount = generatedDetections.head?.length || 0;
+  const bodyCount = generatedDetections.body?.length || 0;
 
   return (
     <div className="gallery-container">
@@ -71,7 +113,7 @@ function Gallery({ referenceImages, generatedImage }) {
       </section>
 
       <section className="generated-image">
-        <h2>Generated Image</h2>
+        <h2>Generated Image with Detections</h2>
         <div className="image-visualization">
           {generatedImage && (
             <div className="image-container">
@@ -79,12 +121,6 @@ function Gallery({ referenceImages, generatedImage }) {
                 ref={imgRef}
                 src={generatedImage.url} 
                 alt="Generated"
-                onLoad={() => {
-                if (canvasRef.current && imgRef.current) {
-                  canvasRef.current.width = imgRef.current.offsetWidth;
-                  canvasRef.current.height = imgRef.current.offsetHeight;
-                }
-              }}
               />
               <canvas ref={canvasRef} className="detection-overlay" />
             </div>
@@ -93,25 +129,44 @@ function Gallery({ referenceImages, generatedImage }) {
       </section>
 
       <section className="evaluation-controls">
+        <h3>Detection Controls</h3>
         <div className="toggle-group">
           <button 
             className={`toggle-btn ${showFaces ? 'active' : ''}`}
             onClick={() => setShowFaces(!showFaces)}
           >
-            Faces ({evaluationResult.face.length})
+            {showFaces ? '✓' : '○'} Faces ({faceCount})
           </button>
           <button
             className={`toggle-btn ${showHeads ? 'active' : ''}`}
             onClick={() => setShowHeads(!showHeads)}
           >
-            Heads ({evaluationResult.head.length})
+            {showHeads ? '✓' : '○'} Heads ({headCount})
           </button>
           <button
             className={`toggle-btn ${showBodies ? 'active' : ''}`}
             onClick={() => setShowBodies(!showBodies)}
           >
-            Bodies ({evaluationResult.body.length})
+            {showBodies ? '✓' : '○'} Bodies ({bodyCount})
           </button>
+        </div>
+      </section>
+
+      <section className="detection-legend">
+        <h3>Detection Legend</h3>
+        <div className="legend-items">
+          <div className="legend-item">
+            <span className="legend-color" style={{backgroundColor: '#FF0000'}}></span>
+            <span>Face</span>
+          </div>
+          <div className="legend-item">
+            <span className="legend-color" style={{backgroundColor: '#00FF00'}}></span>
+            <span>Head</span>
+          </div>
+          <div className="legend-item">
+            <span className="legend-color" style={{backgroundColor: '#0000FF'}}></span>
+            <span>Body</span>
+          </div>
         </div>
       </section>
     </div>
