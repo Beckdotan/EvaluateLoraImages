@@ -94,14 +94,35 @@ function Home() {
     setError('')
     
     try {
-      // In a real implementation, we would upload the images to the server here
-      // For now, we'll just simulate a successful upload and navigate to the gallery
+      // Create FormData and append all images
+      const formData = new FormData()
+      // Append all reference images with 'files' parameter name
+      referenceImages.forEach((img) => {
+        formData.append('files', img)
+      })
+      // Append generated image with 'files' parameter name
+      formData.append('files', generatedImage)
       
-      // Simulating API call delay
-      await new Promise(resolve => setTimeout(resolve, 1500))
+      // Make API call to server
+      const response = await fetch('http://localhost:8000/detect', {
+        method: 'POST',
+        body: formData
+      })
       
-      // Navigate to gallery page after successful upload
-      navigate('/gallery')
+      if (!response.ok) {
+        throw new Error('Server returned an error')
+      }
+      
+      const evaluationResult = await response.json()
+      
+      // Navigate to gallery page with results
+      navigate('/gallery', { 
+        state: { 
+          referenceImages: referenceImages.map(img => ({ url: img.preview })),
+          generatedImage: { url: generatedImage.preview },
+          evaluationResult
+        } 
+      })
     } catch (err) {
       console.error('Upload error:', err)
       setError('Failed to upload images. Please try again.')
