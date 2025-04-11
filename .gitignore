@@ -23,4 +23,6 @@ yarn-error.log*
 *.swo
 
 server/detections/*
+
+server/output/*
 *.pyc

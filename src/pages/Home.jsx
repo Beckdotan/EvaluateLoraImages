@@ -59,7 +59,8 @@ function Home() {
           
           // Create preview URL
           return Object.assign(processedFile, {
-            preview: URL.createObjectURL(processedFile)
+            preview: URL.createObjectURL(processedFile),
+            isReference: true // Mark as reference image
           });
         } catch (error) {
           console.error(`Error processing file ${file.name}:`, error);
@@ -94,7 +95,8 @@ function Home() {
         }
         
         setGeneratedImage(Object.assign(file, {
-          preview: URL.createObjectURL(file)
+          preview: URL.createObjectURL(file),
+          isGenerated: true // Mark as generated image
         }));
       } catch (error) {
         console.error('Error processing generated image:', error);
@@ -138,10 +140,10 @@ function Home() {
     setError('')
     
     try {
-      // Create FormData and append all images
+      // Create FormData
       const formData = new FormData()
       
-      // Append all reference images
+      // Append all reference images first
       referenceImages.forEach((img) => {
         formData.append('files', img)
       })
@@ -149,37 +151,61 @@ function Home() {
       // Append generated image (should be the last file)
       formData.append('files', generatedImage)
       
-      console.log('Uploading images...');
+      console.log('Uploading images for processing...');
       
       // Make API call to server
-      const response = await fetch('http://localhost:8000/detect', {
+      const response = await fetch('http://localhost:8000/process', {
         method: 'POST',
         body: formData
       })
       
-      const data = await response.json()
-      
       if (!response.ok) {
-        throw new Error(data.detail || 'Server returned an error')
+        const errorData = await response.json()
+        throw new Error(
+          errorData.detail?.message || 
+          (typeof errorData.detail === 'string' ? errorData.detail : 'Server returned an error')
+        )
       }
       
-      if (data.error) {
-        throw new Error(data.error)
+      const data = await response.json()
+      console.log('Received processing results:', data);
+      
+      if (!data.results || data.results.length === 0) {
+        throw new Error('No results returned from the server');
       }
-
-      console.log('Received data:', data);
+      
+      // Separate the results into reference and generated
+      const referenceResults = data.results.filter(result => result.type === 'reference');
+      const generatedResult = data.results.find(result => result.type === 'generated');
+      
+      if (!generatedResult) {
+        throw new Error('Generated image processing failed');
+      }
+      
+      // Create the navigation state object
+      const navigationState = {
+        referenceResults,
+        generatedResult,
+        originalReferenceImages: referenceImages.map(img => ({ 
+          url: img.preview,
+          name: img.name 
+        })),
+        originalGeneratedImage: { 
+          url: generatedImage.preview,
+          name: generatedImage.name
+        }
+      };
+      
+      console.log('Navigation state:', navigationState);
       
       // Navigate to gallery page with results
       navigate('/gallery', { 
-        state: { 
-          referenceImages: referenceImages.map(img => ({ url: img.preview })),
-          generatedImage: { url: generatedImage.preview },
-          evaluationResult: data
-        } 
-      })
+        state: navigationState
+      });
+      
     } catch (err) {
       console.error('Upload error:', err)
-      setError(`Failed to upload images: ${err.message}`)
+      setError(`Failed to process images: ${err.message || 'Unknown error'}`)
     } finally {
       setIsUploading(false)
     }
@@ -188,9 +214,9 @@ function Home() {
   return (
     <div className="home-page">
       <div className="container">
-        <h2 className="page-title">Upload Images for Evaluation</h2>
+        <h2 className="page-title">Background Removal & Face Detection</h2>
         <p className="page-description">
-          Upload reference photos of a real person and a generated image to evaluate how closely they match.
+          Upload reference photos and a generated image to remove backgrounds and detect faces.
         </p>
         
         {error && <div className="error-message">{error}</div>}
@@ -198,20 +224,20 @@ function Home() {
         <form onSubmit={handleSubmit} className="upload-form">
           <div className="upload-section">
             <h3>Reference Images</h3>
-            <p className="upload-hint">Upload 1-15 photos of the real person</p>
+            <p className="upload-hint">Upload 1-5 photos of the real person</p>
             
             <Dropzone 
               onDrop={handleReferenceImageDrop}
               accept={{
                 'image/*': ['.jpeg', '.jpg', '.png', '.heic', '.heif']
               }}
-              maxFiles={15}
-              disabled={referenceImages.length >= 15 || isUploading || isConverting}
+              maxFiles={5}
+              disabled={referenceImages.length >= 5 || isUploading || isConverting}
             >
               {({getRootProps, getInputProps}) => (
                 <div 
                   {...getRootProps()} 
-                  className={`dropzone ${referenceImages.length >= 15 || isConverting ? 'dropzone-disabled' : ''}`}
+                  className={`dropzone ${referenceImages.length >= 5 || isConverting ? 'dropzone-disabled' : ''}`}
                 >
                   <input {...getInputProps()} />
                   {isConverting ? (
@@ -244,7 +270,7 @@ function Home() {
           
           <div className="upload-section">
             <h3>Generated Image</h3>
-            <p className="upload-hint">Upload the AI-generated image to evaluate</p>
+            <p className="upload-hint">Upload the AI-generated image to process</p>
             
             <Dropzone 
               onDrop={handleGeneratedImageDrop}
@@ -289,7 +315,7 @@ function Home() {
               className="btn submit-btn"
               disabled={isUploading || isConverting || referenceImages.length === 0 || !generatedImage}
             >
-              {isUploading ? 'Uploading...' : isConverting ? 'Converting...' : 'Evaluate Images'}
+              {isUploading ? 'Processing...' : isConverting ? 'Converting...' : 'Process Images'}
             </button>
           </div>
         </form>
