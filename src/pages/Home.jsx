@@ -174,33 +174,13 @@ function Home() {
         throw new Error('No results returned from the server');
       }
       
-      // Separate the results into reference and generated
-      const referenceResults = data.results.filter(result => result.type === 'reference');
-      const generatedResult = data.results.find(result => result.type === 'generated');
-      
-      if (!generatedResult) {
-        throw new Error('Generated image processing failed');
-      }
-      
-      // Create the navigation state object
-      const navigationState = {
-        referenceResults,
-        generatedResult,
-        originalReferenceImages: referenceImages.map(img => ({ 
-          url: img.preview,
-          name: img.name 
-        })),
-        originalGeneratedImage: { 
-          url: generatedImage.preview,
-          name: generatedImage.name
-        }
-      };
-      
-      console.log('Navigation state:', navigationState);
-      
       // Navigate to gallery page with results
       navigate('/gallery', { 
-        state: navigationState
+        state: {
+          referenceImages: referenceImages.map(img => ({ url: img.preview, name: img.name })),
+          generatedImage: { url: generatedImage.preview, name: generatedImage.name },
+          results: data.results
+        }
       });
       
     } catch (err) {
@@ -212,48 +192,47 @@ function Home() {
   }
 
   return (
-    <div className="home-page">
-      <div className="container">
-        <h2 className="page-title">Background Removal & Face Detection</h2>
-        <p className="page-description">
-          Upload reference photos and a generated image to remove backgrounds and detect faces.
-        </p>
-        
-        {error && <div className="error-message">{error}</div>}
-        
-        <form onSubmit={handleSubmit} className="upload-form">
-          <div className="upload-section">
-            <h3>Reference Images</h3>
-            <p className="upload-hint">Upload 1-5 photos of the real person</p>
-            
-            <Dropzone 
-              onDrop={handleReferenceImageDrop}
-              accept={{
-                'image/*': ['.jpeg', '.jpg', '.png', '.heic', '.heif']
-              }}
-              maxFiles={5}
-              disabled={referenceImages.length >= 5 || isUploading || isConverting}
-            >
-              {({getRootProps, getInputProps}) => (
-                <div 
-                  {...getRootProps()} 
-                  className={`dropzone ${referenceImages.length >= 5 || isConverting ? 'dropzone-disabled' : ''}`}
-                >
-                  <input {...getInputProps()} />
-                  {isConverting ? (
-                    <p>Converting HEIC images, please wait...</p>
-                  ) : (
-                    <p>Drag & drop reference images here, or click to select files</p>
-                  )}
-                </div>
-              )}
-            </Dropzone>
-            
-            {referenceImages.length > 0 && (
+    <div className="home-container">
+      <h2>Background Removal & Face Detection</h2>
+      <p>Upload images to remove backgrounds and detect faces.</p>
+      
+      {error && <div className="error-message">{error}</div>}
+      
+      <form onSubmit={handleSubmit}>
+        <div className="dropzone-section">
+          <h3>Reference Images</h3>
+          <p>Upload 1-5 reference photos</p>
+          
+          <Dropzone 
+            onDrop={handleReferenceImageDrop}
+            accept={{
+              'image/*': ['.jpeg', '.jpg', '.png', '.heic', '.heif']
+            }}
+            maxFiles={5}
+            disabled={referenceImages.length >= 5 || isUploading || isConverting}
+          >
+            {({getRootProps, getInputProps}) => (
+              <div 
+                {...getRootProps()} 
+                className={`dropzone ${referenceImages.length >= 5 || isConverting ? 'dropzone-disabled' : ''}`}
+              >
+                <input {...getInputProps()} />
+                {isConverting ? (
+                  <p>Converting HEIC images, please wait...</p>
+                ) : (
+                  <p>Drag & drop reference images here, or click to select files</p>
+                )}
+              </div>
+            )}
+          </Dropzone>
+          
+          {referenceImages.length > 0 && (
+            <div className="preview-section">
+              <h4>Reference Image Previews</h4>
               <div className="preview-grid">
                 {referenceImages.map((file, index) => (
                   <div key={index} className="preview-item">
-                    <img src={file.preview} alt={`Reference ${index + 1}`} className="preview-image" />
+                    <img src={file.preview} alt={`Reference ${index + 1}`} />
                     <button 
                       type="button" 
                       className="remove-btn"
@@ -265,37 +244,40 @@ function Home() {
                   </div>
                 ))}
               </div>
-            )}
-          </div>
+            </div>
+          )}
+        </div>
+        
+        <div className="dropzone-section">
+          <h3>Generated Image</h3>
+          <p>Upload the AI-generated image to analyze</p>
           
-          <div className="upload-section">
-            <h3>Generated Image</h3>
-            <p className="upload-hint">Upload the AI-generated image to process</p>
-            
-            <Dropzone 
-              onDrop={handleGeneratedImageDrop}
-              accept={{
-                'image/*': ['.jpeg', '.jpg', '.png', '.heic', '.heif']
-              }}
-              maxFiles={1}
-              disabled={isUploading || isConverting}
-            >
-              {({getRootProps, getInputProps}) => (
-                <div {...getRootProps()} className="dropzone">
-                  <input {...getInputProps()} />
-                  {isConverting ? (
-                    <p>Converting HEIC image, please wait...</p>
-                  ) : (
-                    <p>Drag & drop generated image here, or click to select file</p>
-                  )}
-                </div>
-              )}
-            </Dropzone>
-            
-            {generatedImage && (
+          <Dropzone 
+            onDrop={handleGeneratedImageDrop}
+            accept={{
+              'image/*': ['.jpeg', '.jpg', '.png', '.heic', '.heif']
+            }}
+            maxFiles={1}
+            disabled={isUploading || isConverting}
+          >
+            {({getRootProps, getInputProps}) => (
+              <div {...getRootProps()} className="dropzone">
+                <input {...getInputProps()} />
+                {isConverting ? (
+                  <p>Converting HEIC image, please wait...</p>
+                ) : (
+                  <p>Drag & drop generated image here, or click to select file</p>
+                )}
+              </div>
+            )}
+          </Dropzone>
+          
+          {generatedImage && (
+            <div className="preview-section">
+              <h4>Generated Image Preview</h4>
               <div className="preview-grid">
                 <div className="preview-item">
-                  <img src={generatedImage.preview} alt="Generated" className="preview-image" />
+                  <img src={generatedImage.preview} alt="Generated" />
                   <button 
                     type="button" 
                     className="remove-btn"
@@ -306,20 +288,18 @@ function Home() {
                   </button>
                 </div>
               </div>
-            )}
-          </div>
-          
-          <div className="form-actions">
-            <button 
-              type="submit" 
-              className="btn submit-btn"
-              disabled={isUploading || isConverting || referenceImages.length === 0 || !generatedImage}
-            >
-              {isUploading ? 'Processing...' : isConverting ? 'Converting...' : 'Process Images'}
-            </button>
-          </div>
-        </form>
-      </div>
+            </div>
+          )}
+        </div>
+        
+        <button 
+          type="submit" 
+          className="upload-button"
+          disabled={isUploading || isConverting || referenceImages.length === 0 || !generatedImage}
+        >
+          {isUploading ? 'Processing...' : 'Process Images'}
+        </button>
+      </form>
     </div>
   )
 }

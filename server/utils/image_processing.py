@@ -6,6 +6,15 @@ import logging
 import traceback
 
 async def process_uploaded_image(file):
+    """
+    Process an uploaded image file and convert it to OpenCV format.
+    
+    Args:
+        file: The uploaded file object
+        
+    Returns:
+        OpenCV image in BGR format
+    """
     try:
         contents = await file.read()
         

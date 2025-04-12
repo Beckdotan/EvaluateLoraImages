@@ -12,10 +12,12 @@ from datetime import datetime
 import base64
 from utils.image_processing import process_uploaded_image
 from services.face_detection import FaceDetector
+from services.background_removal import BackgroundRemover
 
 # Create output directories if they don't exist
 os.makedirs('output/processed_images', exist_ok=True)
 os.makedirs('output/thumbnails', exist_ok=True)
+os.makedirs('output/face_crops', exist_ok=True)
 
 logging.basicConfig(
     filename='server.log',
@@ -33,51 +35,9 @@ app.add_middleware(
     allow_headers=['*'],
 )
 
-# Initialize detectors
-face_detector = FaceDetector()
-
-def remove_background(image):
-    """
-    Remove background from an image using a simple segmentation approach.
-    Returns the image with transparent background (RGBA).
-    """
-    try:
-        # Convert to RGB if it's not
-        if image.shape[2] == 4:
-            image_rgb = cv2.cvtColor(image, cv2.COLOR_RGBA2RGB)
-        else:
-            image_rgb = image.copy()
-        
-        # Use GrabCut algorithm for background removal
-        # Create a mask initialized with obvious background (0) and foreground (1)
-        mask = np.zeros(image_rgb.shape[:2], np.uint8)
-        
-        # Set rectangle for foreground - assume subject is somewhat centered
-        rect = (int(image_rgb.shape[1] * 0.05), 
-                int(image_rgb.shape[0] * 0.05), 
-                int(image_rgb.shape[1] * 0.9), 
-                int(image_rgb.shape[0] * 0.9))
-        
-        # Initialize background and foreground models
-        bgd_model = np.zeros((1, 65), np.float64)
-        fgd_model = np.zeros((1, 65), np.float64)
-        
-        # Apply GrabCut
-        cv2.grabCut(image_rgb, mask, rect, bgd_model, fgd_model, 5, cv2.GC_INIT_WITH_RECT)
-        
-        # Modify the mask for the output
-        mask2 = np.where((mask == 2) | (mask == 0), 0, 1).astype('uint8')
-        
-        # Multiply with the input image
-        image_rgba = cv2.cvtColor(image_rgb, cv2.COLOR_RGB2RGBA)
-        image_rgba[:, :, 3] = mask2 * 255
-        
-        return image_rgba
-    except Exception as e:
-        logging.error(f"Error in background removal: {str(e)}")
-        logging.error(traceback.format_exc())
-        # If the background removal fails, return the original image
-        return cv2.cvtColor(image, cv2.COLOR_BGR2RGBA) if image.shape[2] == 3 else image
+# Initialize services
+face_detector = FaceDetector(min_detection_confidence=0.5)
+background_remover = BackgroundRemover(foreground_rect_scale=0.9)
 
 def save_image(image, prefix):
     """Save the image and return the file path"""
@@ -135,7 +95,7 @@ async def process_images(files: List[UploadFile] = File(...)):
                 original_image = await process_uploaded_image(file)
                 
                 # Remove the background
-                processed_image = remove_background(original_image)
+                processed_image = background_remover.remove_background(original_image)
                 
                 # Save the processed image
                 file_prefix = "reference" if i < len(files) - 1 else "generated"
@@ -145,7 +105,7 @@ async def process_images(files: List[UploadFile] = File(...)):
                 thumb_path = create_thumbnail(processed_image, image_path)
                 
                 # Detect faces
-                faces = face_detector.detect_faces(original_image, padding=0)  # No padding
+                faces = face_detector.detect_faces(original_image, padding=0)
                 
                 # Convert images to base64 for direct embedding in response
                 image_base64 = image_to_base64(image_path)
@@ -220,6 +180,24 @@ async def get_thumbnail(image_id: str):
         raise
     except Exception as e:
         logging.error(f"Error serving thumbnail: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get('/face/{face_id}')
+async def get_face(face_id: str):
+    """Endpoint to serve face crops"""
+    try:
+        # Security check to prevent directory traversal
+        face_id = os.path.basename(face_id)
+        face_path = os.path.join('output/face_crops', face_id)
+        
+        if not os.path.exists(face_path):
+            raise HTTPException(status_code=404, detail="Face image not found")
+        
+        return FileResponse(face_path)
+    except HTTPException:
+        raise
+    except Exception as e:
+        logging.error(f"Error serving face crop: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == '__main__':
