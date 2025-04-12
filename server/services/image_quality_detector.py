@@ -1,5 +1,4 @@
 import os
-import sys
 import logging
 import numpy as np
 import cv2
@@ -12,20 +11,28 @@ import img2score
 from img2score.models import NIQE, BRISQUE, CLIPIQA
 import time
 from concurrent.futures import ThreadPoolExecutor
+from typing import Optional, Dict, List, Any, Union
+import google.generativeai as genai
+from dotenv import load_dotenv
+from img2score.models import NIQE, BRISQUE, CLIPIQA
 
-class AIImageQualityDetector:
+# Load environment variables (for Google API key)
+load_dotenv()
+
+class SimpleAIImageQualityDetector:
     """
-    A service that detects flaws in AI-generated images using img2score for general 
-    quality assessment, MediaPipe for hand analysis, and OpenPose for body analysis.
+    A simplified service that detects flaws in AI-generated images using img2score for 
+    general quality assessment, MediaPipe for hand analysis, and Google Gemini for 
+    visual analysis.
     """
     
-    def __init__(self, use_openpose=True, models_path="./models"):
+    def __init__(self):
         # Setup logging
         logging.basicConfig(
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
-        self.logger = logging.getLogger("AIImageQualityDetector")
+        self.logger = logging.getLogger("SimpleAIImageQualityDetector")
         self.logger.info("Initializing AI Image Quality Detector")
         
         # Initialize MediaPipe Hands
@@ -46,52 +53,6 @@ class AIImageQualityDetector:
         except Exception as e:
             self.logger.error(f"Error loading img2score models: {e}")
             raise
-            
-        # Initialize OpenPose if requested
-        self.use_openpose = use_openpose
-        if use_openpose:
-            try:
-                self.logger.info("Loading OpenPose model")
-                # Import OpenPose - handle potential import paths based on installation
-                try:
-                    # If OpenPose is installed as a Python package
-                    import pyopenpose as op
-                    self.openpose = op
-                    self.logger.info("Using PyOpenPose package")
-                except ImportError:
-                    # If using the OpenPose GitHub repo approach
-                    self.logger.info("PyOpenPose package not found, trying OpenPose from GitHub installation")
-                    
-                    # Add OpenPose to system path (adjust these paths as needed)
-                    openpose_path = os.environ.get("OPENPOSE_PATH", models_path + "/openpose")
-                    if not os.path.exists(openpose_path):
-                        self.logger.warning(f"OpenPose path not found at {openpose_path}")
-                        self.use_openpose = False
-                    else:
-                        sys.path.append(openpose_path + '/build/python')
-                        try:
-                            import pyopenpose as op
-                            self.openpose = op
-                            self.logger.info("Using OpenPose from GitHub installation")
-                        except ImportError:
-                            self.logger.warning("OpenPose not found. Body pose analysis will be disabled.")
-                            self.use_openpose = False
-                
-                # Configure OpenPose if available
-                if self.use_openpose:
-                    params = {
-                        "model_folder": os.path.join(openpose_path, "models/"),
-                        "hand": True,
-                        "face": True,
-                        "disable_multi_thread": False,
-                    }
-                    self.op_wrapper = self.openpose.WrapperPython()
-                    self.op_wrapper.configure(params)
-                    self.op_wrapper.start()
-                    self.logger.info("OpenPose initialized successfully")
-            except Exception as e:
-                self.logger.error(f"Error initializing OpenPose: {e}")
-                self.use_openpose = False
                 
         self.logger.info("AI Image Quality Detector initialized successfully")
     
@@ -202,6 +163,8 @@ class AIImageQualityDetector:
     def analyze_hands(self, cv_image):
         """
         Analyze hands in the image using MediaPipe Hands.
+        If no hands are detected (e.g., in a selfie showing only a face),
+        returns a perfect score since no hand issues can exist.
         
         Args:
             cv_image: OpenCV image in BGR format
@@ -224,289 +187,131 @@ class AIImageQualityDetector:
                 "hand_score": 1.0  # Start with perfect score
             }
             
-            if results.multi_hand_landmarks:
-                hand_analysis["num_hands_detected"] = len(results.multi_hand_landmarks)
+            # If no hands are detected, return perfect score with appropriate message
+            if not results.multi_hand_landmarks:
+                hand_analysis["message"] = "No hands detected in the image"
+                return hand_analysis
+            
+            # Hands are detected, analyze them
+            hand_analysis["num_hands_detected"] = len(results.multi_hand_landmarks)
+            
+            for idx, (hand_landmarks, handedness) in enumerate(
+                zip(results.multi_hand_landmarks, results.multi_handedness)
+            ):
+                # Determine hand side (left/right)
+                hand_side = handedness.classification[0].label
                 
-                for idx, (hand_landmarks, handedness) in enumerate(
-                    zip(results.multi_hand_landmarks, results.multi_handedness)
-                ):
-                    # Determine hand side (left/right)
-                    hand_side = handedness.classification[0].label
-                    
-                    # Collect all landmarks for this hand
-                    landmarks = []
-                    for lm in hand_landmarks.landmark:
-                        landmarks.append({
-                            "x": lm.x * w,
-                            "y": lm.y * h,
-                            "z": lm.z * w,  # z is relative to image width for MediaPipe
-                            "visibility": 1.0  # MediaPipe doesn't provide visibility
-                        })
-                    
-                    # Identify fingers (using MediaPipe hand landmarks indices)
-                    # MediaPipe numbers: thumb 1-4, index 5-8, middle 9-12, ring 13-16, pinky 17-20
-                    # Tip indices are: thumb=4, index=8, middle=12, ring=16, pinky=20
-                    finger_tips = [4, 8, 12, 16, 20]
-                    mcp_joints = [1, 5, 9, 13, 17]  # Base knuckles of each finger
-                    
-                    # Get wrist point as reference
-                    wrist = hand_landmarks.landmark[0]
-                    wrist_point = (wrist.x * w, wrist.y * h)
-                    
-                    # Calculate hand size (distance from wrist to middle finger MCP)
-                    middle_mcp = hand_landmarks.landmark[9]
-                    middle_mcp_point = (middle_mcp.x * w, middle_mcp.y * h)
-                    hand_size = self._distance(wrist_point, middle_mcp_point)
-                    
-                    # Check finger proportions
-                    finger_lengths = []
-                    finger_names = ["thumb", "index", "middle", "ring", "pinky"]
-                    
-                    finger_issues = []
-                    finger_anomaly_score = 0.0
-                    
-                    for i, (tip_idx, mcp_idx) in enumerate(zip(finger_tips, mcp_joints)):
-                        # Get tip and base points
-                        tip = hand_landmarks.landmark[tip_idx]
-                        base = hand_landmarks.landmark[mcp_idx]
-                        
-                        # Calculate length
-                        length = self._distance(
-                            (tip.x * w, tip.y * h),
-                            (base.x * w, base.y * h)
-                        )
-                        finger_lengths.append(length)
-                        
-                        # Check if finger is unusually long or short
-                        if i > 0:  # Skip thumb as it's naturally different
-                            if length > hand_size * 1.5:
-                                finger_issues.append(f"{finger_names[i]} finger appears too long")
-                                finger_anomaly_score += 0.2
-                            elif length < hand_size * 0.2:
-                                finger_issues.append(f"{finger_names[i]} finger appears too short")
-                                finger_anomaly_score += 0.2
-                    
-                    # Check expected finger length relationships
-                    # Typically: middle > ring > index > pinky > thumb
-                    # But we're mostly concerned with extreme deviations
-                    
-                    # Middle should be longest (index 2)
-                    if len(finger_lengths) >= 5:
-                        if finger_lengths[2] < finger_lengths[1] or finger_lengths[2] < finger_lengths[3]:
-                            finger_issues.append("Unusual finger proportions - middle finger should be longest")
-                            finger_anomaly_score += 0.15
-                        
-                        # Pinky should be shorter than index
-                        if finger_lengths[4] > finger_lengths[1]:
-                            finger_issues.append("Unusual finger proportions - pinky longer than index finger")
-                            finger_anomaly_score += 0.15
-                    
-                    # Check for extra fingers by analyzing distances between fingertips
-                    if len(finger_lengths) >= 5:
-                        tip_positions = []
-                        for tip_idx in finger_tips:
-                            tip = hand_landmarks.landmark[tip_idx]
-                            tip_positions.append((tip.x * w, tip.y * h))
-                        
-                        # Check for fingertips too close together (might indicate merged fingers)
-                        for i in range(len(tip_positions)):
-                            for j in range(i+1, len(tip_positions)):
-                                dist = self._distance(tip_positions[i], tip_positions[j])
-                                # If two fingertips are very close together relative to hand size
-                                if dist < hand_size * 0.1 and i != j:
-                                    finger_issues.append(f"Possible merged fingers detected between {finger_names[i]} and {finger_names[j]}")
-                                    finger_anomaly_score += 0.3
-                                    break
-                    
-                    # Cap anomaly score at 1.0
-                    finger_anomaly_score = min(1.0, finger_anomaly_score)
-                    
-                    # Add this hand's information
-                    hand_analysis["hands"].append({
-                        "hand_idx": idx,
-                        "hand_side": hand_side,
-                        "finger_issues": finger_issues,
-                        "finger_anomaly_score": finger_anomaly_score,
-                        "landmarks": landmarks  # Include all landmarks for potential further analysis
+                # Collect all landmarks for this hand
+                landmarks = []
+                for lm in hand_landmarks.landmark:
+                    landmarks.append({
+                        "x": lm.x * w,
+                        "y": lm.y * h,
+                        "z": lm.z * w,  # z is relative to image width for MediaPipe
+                        "visibility": 1.0  # MediaPipe doesn't provide visibility
                     })
+                
+                # Identify fingers (using MediaPipe hand landmarks indices)
+                # MediaPipe numbers: thumb 1-4, index 5-8, middle 9-12, ring 13-16, pinky 17-20
+                # Tip indices are: thumb=4, index=8, middle=12, ring=16, pinky=20
+                finger_tips = [4, 8, 12, 16, 20]
+                mcp_joints = [1, 5, 9, 13, 17]  # Base knuckles of each finger
+                
+                # Get wrist point as reference
+                wrist = hand_landmarks.landmark[0]
+                wrist_point = (wrist.x * w, wrist.y * h)
+                
+                # Calculate hand size (distance from wrist to middle finger MCP)
+                middle_mcp = hand_landmarks.landmark[9]
+                middle_mcp_point = (middle_mcp.x * w, middle_mcp.y * h)
+                hand_size = self._distance(wrist_point, middle_mcp_point)
+                
+                # Check finger proportions
+                finger_lengths = []
+                finger_names = ["thumb", "index", "middle", "ring", "pinky"]
+                
+                finger_issues = []
+                finger_anomaly_score = 0.0
+                
+                for i, (tip_idx, mcp_idx) in enumerate(zip(finger_tips, mcp_joints)):
+                    # Get tip and base points
+                    tip = hand_landmarks.landmark[tip_idx]
+                    base = hand_landmarks.landmark[mcp_idx]
                     
-                    # Update overall hand issues and score
-                    hand_analysis["hand_issues"].extend([f"Hand {idx+1} ({hand_side}): {issue}" for issue in finger_issues])
-                    hand_analysis["hand_score"] = min(hand_analysis["hand_score"], 1.0 - finger_anomaly_score)
+                    # Calculate length
+                    length = self._distance(
+                        (tip.x * w, tip.y * h),
+                        (base.x * w, base.y * h)
+                    )
+                    finger_lengths.append(length)
+                    
+                    # Check if finger is unusually long or short
+                    if i > 0:  # Skip thumb as it's naturally different
+                        if length > hand_size * 1.5:
+                            finger_issues.append(f"{finger_names[i]} finger appears too long")
+                            finger_anomaly_score += 0.2
+                        elif length < hand_size * 0.2:
+                            finger_issues.append(f"{finger_names[i]} finger appears too short")
+                            finger_anomaly_score += 0.2
+                
+                # Check expected finger length relationships
+                # Typically: middle > ring > index > pinky > thumb
+                # But we're mostly concerned with extreme deviations
+                
+                # Middle should be longest (index 2)
+                if len(finger_lengths) >= 5:
+                    if finger_lengths[2] < finger_lengths[1] or finger_lengths[2] < finger_lengths[3]:
+                        finger_issues.append("Unusual finger proportions - middle finger should be longest")
+                        finger_anomaly_score += 0.15
+                    
+                    # Pinky should be shorter than index
+                    if finger_lengths[4] > finger_lengths[1]:
+                        finger_issues.append("Unusual finger proportions - pinky longer than index finger")
+                        finger_anomaly_score += 0.15
+                
+                # Check for extra fingers by analyzing distances between fingertips
+                if len(finger_lengths) >= 5:
+                    tip_positions = []
+                    for tip_idx in finger_tips:
+                        tip = hand_landmarks.landmark[tip_idx]
+                        tip_positions.append((tip.x * w, tip.y * h))
+                    
+                    # Check for fingertips too close together (might indicate merged fingers)
+                    for i in range(len(tip_positions)):
+                        for j in range(i+1, len(tip_positions)):
+                            dist = self._distance(tip_positions[i], tip_positions[j])
+                            # If two fingertips are very close together relative to hand size
+                            if dist < hand_size * 0.1 and i != j:
+                                finger_issues.append(f"Possible merged fingers detected between {finger_names[i]} and {finger_names[j]}")
+                                finger_anomaly_score += 0.3
+                                break
+                
+                # Cap anomaly score at 1.0
+                finger_anomaly_score = min(1.0, finger_anomaly_score)
+                
+                # Add this hand's information
+                hand_analysis["hands"].append({
+                    "hand_idx": idx,
+                    "hand_side": hand_side,
+                    "finger_issues": finger_issues,
+                    "finger_anomaly_score": finger_anomaly_score,
+                    "landmarks": landmarks  # Include all landmarks for potential further analysis
+                })
+                
+                # Update overall hand issues and score
+                hand_analysis["hand_issues"].extend([f"Hand {idx+1} ({hand_side}): {issue}" for issue in finger_issues])
+                hand_analysis["hand_score"] = min(hand_analysis["hand_score"], 1.0 - finger_anomaly_score)
             
             return hand_analysis
         except Exception as e:
             self.logger.error(f"Error in hand analysis: {e}")
             return {
                 "error": f"Failed to analyze hands: {str(e)}",
-                "hand_score": 0.5  # Neutral score on error
+                "hand_score": 0.5,  # Neutral score on error
+                "num_hands_detected": 0
             }
     
-    def analyze_body_pose(self, cv_image):
-        """
-        Analyze body pose using OpenPose if available.
-        
-        Args:
-            cv_image: OpenCV image in BGR format
-            
-        Returns:
-            Dictionary with body pose analysis results
-        """
-        if not self.use_openpose:
-            return {
-                "body_analysis_available": False,
-                "body_score": 0.8,  # Default reasonably high score when not analyzing
-                "message": "OpenPose not enabled or available. Body pose analysis skipped."
-            }
-        
-        try:
-            # OpenPose requires its own data structures
-            datum = self.openpose.Datum()
-            datum.cvInputData = cv_image
-            
-            # Process image with OpenPose
-            self.op_wrapper.emplaceAndPop([datum])
-            
-            # Initialize body analysis results
-            body_analysis = {
-                "body_analysis_available": True,
-                "num_people_detected": 0,
-                "people": [],
-                "body_issues": [],
-                "body_score": 1.0  # Start with perfect score
-            }
-            
-            # If pose keypoints were detected
-            if datum.poseKeypoints is not None and datum.poseKeypoints.shape[0] > 0:
-                body_analysis["num_people_detected"] = datum.poseKeypoints.shape[0]
-                
-                for person_idx, person_keypoints in enumerate(datum.poseKeypoints):
-                    person_issues = []
-                    person_anomaly_score = 0.0
-                    
-                    # Extract important keypoints
-                    # Format: [keypoint_index][0:x, 1:y, 2:confidence]
-                    keypoints = []
-                    keypoint_confidences = []
-                    
-                    for kp_idx, keypoint in enumerate(person_keypoints):
-                        keypoints.append({
-                            "x": float(keypoint[0]),
-                            "y": float(keypoint[1]),
-                            "confidence": float(keypoint[2])
-                        })
-                        keypoint_confidences.append(float(keypoint[2]))
-                    
-                    # Check confidence of keypoints
-                    avg_confidence = np.mean(keypoint_confidences)
-                    if avg_confidence < 0.3:
-                        person_issues.append("Low confidence in pose detection, results may be unreliable")
-                        person_anomaly_score += 0.2
-                    
-                    # OpenPose keypoint indices
-                    # For reference: https://github.com/CMU-Perceptual-Computing-Lab/openpose/blob/master/doc/output.md
-                    right_shoulder = 2
-                    left_shoulder = 5
-                    right_hip = 8
-                    left_hip = 11
-                    right_knee = 9
-                    left_knee = 12
-                    right_ankle = 10
-                    left_ankle = 13
-                    
-                    # Check for anatomical anomalies
-                    
-                    # 1. Body symmetry - compare left/right limb lengths
-                    if (keypoints[right_shoulder]["confidence"] > 0.5 and 
-                        keypoints[left_shoulder]["confidence"] > 0.5 and
-                        keypoints[right_hip]["confidence"] > 0.5 and
-                        keypoints[left_hip]["confidence"] > 0.5):
-                        
-                        # Calculate torso width at shoulders and hips
-                        shoulder_width = self._distance(
-                            (keypoints[right_shoulder]["x"], keypoints[right_shoulder]["y"]),
-                            (keypoints[left_shoulder]["x"], keypoints[left_shoulder]["y"])
-                        )
-                        
-                        hip_width = self._distance(
-                            (keypoints[right_hip]["x"], keypoints[right_hip]["y"]),
-                            (keypoints[left_hip]["x"], keypoints[left_hip]["y"])
-                        )
-                        
-                        # Check unusual shoulder-to-hip ratio
-                        if shoulder_width > 0 and hip_width > 0:
-                            shoulder_hip_ratio = shoulder_width / hip_width
-                            if shoulder_hip_ratio > 2.5 or shoulder_hip_ratio < 0.8:
-                                person_issues.append("Unusual body proportions: abnormal shoulder-to-hip ratio")
-                                person_anomaly_score += 0.25
-                    
-                    # 2. Check for leg length symmetry
-                    if (keypoints[right_hip]["confidence"] > 0.5 and 
-                        keypoints[left_hip]["confidence"] > 0.5 and
-                        keypoints[right_knee]["confidence"] > 0.5 and 
-                        keypoints[left_knee]["confidence"] > 0.5 and
-                        keypoints[right_ankle]["confidence"] > 0.5 and
-                        keypoints[left_ankle]["confidence"] > 0.5):
-                        
-                        # Calculate leg lengths
-                        right_upper_leg = self._distance(
-                            (keypoints[right_hip]["x"], keypoints[right_hip]["y"]),
-                            (keypoints[right_knee]["x"], keypoints[right_knee]["y"])
-                        )
-                        
-                        left_upper_leg = self._distance(
-                            (keypoints[left_hip]["x"], keypoints[left_hip]["y"]),
-                            (keypoints[left_knee]["x"], keypoints[left_knee]["y"])
-                        )
-                        
-                        right_lower_leg = self._distance(
-                            (keypoints[right_knee]["x"], keypoints[right_knee]["y"]),
-                            (keypoints[right_ankle]["x"], keypoints[right_ankle]["y"])
-                        )
-                        
-                        left_lower_leg = self._distance(
-                            (keypoints[left_knee]["x"], keypoints[left_knee]["y"]),
-                            (keypoints[left_ankle]["x"], keypoints[left_ankle]["y"])
-                        )
-                        
-                        # Compare left vs right leg lengths
-                        if max(right_upper_leg, left_upper_leg) > 0:
-                            upper_leg_ratio = min(right_upper_leg, left_upper_leg) / max(right_upper_leg, left_upper_leg)
-                            if upper_leg_ratio < 0.7:  # More than 30% difference
-                                person_issues.append("Asymmetric upper leg lengths detected")
-                                person_anomaly_score += 0.2
-                        
-                        if max(right_lower_leg, left_lower_leg) > 0:
-                            lower_leg_ratio = min(right_lower_leg, left_lower_leg) / max(right_lower_leg, left_lower_leg)
-                            if lower_leg_ratio < 0.7:  # More than 30% difference
-                                person_issues.append("Asymmetric lower leg lengths detected")
-                                person_anomaly_score += 0.2
-                    
-                    # Cap anomaly score
-                    person_anomaly_score = min(1.0, person_anomaly_score)
-                    
-                    # Add this person's data
-                    body_analysis["people"].append({
-                        "person_idx": person_idx,
-                        "keypoints": keypoints,
-                        "issues": person_issues,
-                        "anomaly_score": person_anomaly_score
-                    })
-                    
-                    # Update overall body issues and score
-                    body_analysis["body_issues"].extend([f"Person {person_idx+1}: {issue}" for issue in person_issues])
-                    body_analysis["body_score"] = min(body_analysis["body_score"], 1.0 - person_anomaly_score)
-            else:
-                body_analysis["message"] = "No people detected in the image"
-            
-            return body_analysis
-        except Exception as e:
-            self.logger.error(f"Error in body pose analysis: {e}")
-            return {
-                "body_analysis_available": False,
-                "body_score": 0.5,  # Neutral score on error
-                "error": f"Failed to analyze body pose: {str(e)}"
-            }
+    # Removed the analyze_with_gemini method
     
     def _distance(self, point1, point2):
         """Calculate Euclidean distance between two points."""
@@ -529,32 +334,32 @@ class AIImageQualityDetector:
             cv_image, pil_image = self.load_image(image_path_or_url)
             
             # Run different analyses in parallel
-            with ThreadPoolExecutor(max_workers=3) as executor:
+            with ThreadPoolExecutor(max_workers=2) as executor:
                 quality_future = executor.submit(self.assess_image_quality, pil_image)
                 hands_future = executor.submit(self.analyze_hands, cv_image)
-                body_future = executor.submit(self.analyze_body_pose, cv_image)
                 
                 # Get results
                 quality_results = quality_future.result()
                 hand_results = hands_future.result()
-                body_results = body_future.result()
             
             # Calculate overall score as weighted average
-            overall_score = (
-                quality_results.get("overall_quality_score", 0) * 0.4 +
-                hand_results.get("hand_score", 0.8) * 0.3 +
-                body_results.get("body_score", 0.8) * 0.3
-            )
+            # If no hands are detected, rely more on image quality scores
+            if hand_results.get("num_hands_detected", 0) == 0 and "message" in hand_results:
+                # No hands in the image, weight quality score higher
+                overall_score = quality_results.get("overall_quality_score", 0)
+                self.logger.info("No hands detected in image, relying solely on image quality score")
+            else:
+                # Hands detected, use weighted average
+                overall_score = (
+                    quality_results.get("overall_quality_score", 0) * 0.6 +
+                    hand_results.get("hand_score", 0.8) * 0.4
+                )
             
             # Determine if image is acceptable
             is_acceptable = overall_score >= 0.7
             
             # Compile all issues
-            all_issues = (
-                quality_results.get("quality_issues", []) +
-                hand_results.get("hand_issues", []) +
-                body_results.get("body_issues", [])
-            )
+            all_issues = quality_results.get("quality_issues", []) + hand_results.get("hand_issues", [])
             
             # Prepare final response
             response = {
@@ -564,8 +369,7 @@ class AIImageQualityDetector:
                 "issues_summary": all_issues,
                 "detailed_results": {
                     "image_quality": quality_results,
-                    "hand_analysis": hand_results,
-                    "body_analysis": body_results
+                    "hand_analysis": hand_results
                 }
             }
             
@@ -579,23 +383,22 @@ class AIImageQualityDetector:
             }
 
 
-# CLI entrypoint
-def main():
+# Missing import for regex
+import re
+
+# Example usage
+if __name__ == "__main__":
     import argparse
     
     parser = argparse.ArgumentParser(description="AI Image Quality Detector")
     parser.add_argument("--image", type=str, required=True, help="Path to image file or URL")
     parser.add_argument("--output", type=str, help="Optional path to save results as JSON")
-    parser.add_argument("--no-openpose", action="store_true", help="Disable OpenPose body analysis")
-    parser.add_argument("--models-path", type=str, default="./models", help="Path to model files")
+    parser.add_argument("--no-gemini", action="store_true", help="Disable Google Gemini analysis")
     
     args = parser.parse_args()
     
     # Initialize detector
-    detector = AIImageQualityDetector(
-        use_openpose=not args.no_openpose,
-        models_path=args.models_path
-    )
+    detector = SimpleAIImageQualityDetector(use_gemini=not args.no_gemini)
     
     # Analyze image
     results = detector.analyze_image(args.image)
@@ -618,7 +421,3 @@ def main():
         with open(args.output, 'w') as f:
             json.dump(results, f, indent=2)
         print(f"\nDetailed results saved to {args.output}")
-
-
-if __name__ == "__main__":
-    main()
