@@ -46,7 +46,7 @@ app.add_middleware(
 )
 
 # Initialize services
-face_detector = FaceDetector(min_detection_confidence=0.8)
+face_detector = FaceDetector(min_detection_confidence=0.7)
 background_remover = BackgroundRemover(foreground_rect_scale=0.95)
 try:
     visual_analysis_service = VisualAnalysisService()

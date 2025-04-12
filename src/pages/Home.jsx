@@ -201,15 +201,15 @@ function Home() {
       <form onSubmit={handleSubmit}>
         <div className="dropzone-section">
           <h3>Reference Images</h3>
-          <p>Upload 1-5 reference photos</p>
+          <p>Upload 1-15 reference photos</p>
           
           <Dropzone 
             onDrop={handleReferenceImageDrop}
             accept={{
               'image/*': ['.jpeg', '.jpg', '.png', '.heic', '.heif']
             }}
-            maxFiles={5}
-            disabled={referenceImages.length >= 5 || isUploading || isConverting}
+            maxFiles={15}
+            disabled={referenceImages.length >= 15 || isUploading || isConverting}
           >
             {({getRootProps, getInputProps}) => (
               <div 
