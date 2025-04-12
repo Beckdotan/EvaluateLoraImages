@@ -15,7 +15,6 @@ function Gallery() {
   const [selectedResult, setSelectedResult] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [selectedType, setSelectedType] = useState(null); // 'reference' or 'generated'
-  const [selectedOriginalImage, setSelectedOriginalImage] = useState(null);
   
   // Container ref for getting proper dimensions
   const containerRef = useRef(null);
@@ -45,9 +44,8 @@ function Gallery() {
       setSelectedResult(generatedResult);
       setSelectedType('generated');
       setSelectedIndex(0);
-      setSelectedOriginalImage(generatedImage.url);
     }
-  }, [selectedImage, generatedResult, generatedImage]);
+  }, [selectedImage, generatedResult]);
 
   // Function to draw face detection overlays on the canvas
   const drawFaceDetections = () => {
@@ -59,9 +57,8 @@ function Gallery() {
       return;
     }
     
-    // Get container and image dimensions
+    // Get container dimensions
     const containerRect = container.getBoundingClientRect();
-    const imageRect = image.getBoundingClientRect();
     
     // Set canvas size to match the container
     canvas.width = containerRect.width;
@@ -75,17 +72,20 @@ function Gallery() {
       return;
     }
     
-    // Calculate scaling factors and offsets to map original image coordinates to displayed image
-    const scale = {
-      x: imageRect.width / image.naturalWidth,
-      y: imageRect.height / image.naturalHeight
-    };
+    // Get the dimensions of the displayed image
+    const imageRect = image.getBoundingClientRect();
+    
+    // Original dimensions from the result data (the dimensions of the processed image)
+    const originalWidth = selectedResult.width;
+    const originalHeight = selectedResult.height;
+    
+    // Calculate scaling factors for the displayed image relative to original size
+    const scaleX = imageRect.width / originalWidth;
+    const scaleY = imageRect.height / originalHeight;
     
     // Calculate offset (when image is centered in container)
-    const offset = {
-      x: (containerRect.width - imageRect.width) / 2,
-      y: (containerRect.height - imageRect.height) / 2
-    };
+    const offsetX = (containerRect.width - imageRect.width) / 2;
+    const offsetY = (containerRect.height - imageRect.height) / 2;
     
     // Draw face detections
     ctx.strokeStyle = '#FF0000';  // Red for faces
@@ -95,11 +95,11 @@ function Gallery() {
       if (face.coordinates && face.coordinates.length === 4) {
         const [x1, y1, x2, y2] = face.coordinates;
         
-        // Scale and offset the coordinates
-        const scaledX = x1 * scale.x + offset.x;
-        const scaledY = y1 * scale.y + offset.y;
-        const scaledWidth = (x2 - x1) * scale.x;
-        const scaledHeight = (y2 - y1) * scale.y;
+        // Scale coordinates to match displayed image size
+        const scaledX = x1 * scaleX + offsetX;
+        const scaledY = y1 * scaleY + offsetY;
+        const scaledWidth = (x2 - x1) * scaleX;
+        const scaledHeight = (y2 - y1) * scaleY;
         
         // Draw rectangle
         ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
@@ -124,7 +124,7 @@ function Gallery() {
     
     return showBackgroundRemoved 
       ? selectedResult.image_base64  // Background removed image
-      : selectedOriginalImage;       // Original image with background
+      : selectedResult.thumbnail_base64;  // Original processed image (with background)
   };
   
   // Redraw detections when relevant states change
@@ -163,13 +163,11 @@ function Gallery() {
   // Handle reference thumbnail click
   const handleReferenceClick = (resultIndex) => {
     const result = referenceResults[resultIndex];
-    const originalImage = referenceImages[resultIndex].url;
     
     setSelectedImage(result.image_base64);
     setSelectedResult(result);
     setSelectedType('reference');
     setSelectedIndex(resultIndex);
-    setSelectedOriginalImage(originalImage);
   };
 
   // Handle generated image click
@@ -179,7 +177,6 @@ function Gallery() {
       setSelectedResult(generatedResult);
       setSelectedType('generated');
       setSelectedIndex(0);
-      setSelectedOriginalImage(generatedImage.url);
     }
   };
 
@@ -203,7 +200,7 @@ function Gallery() {
                 onClick={() => handleReferenceClick(index)}
               >
                 <img 
-                  src={referenceImages[index].url} 
+                  src={result.thumbnail_base64} 
                   alt={`Reference ${index + 1}`} 
                 />
                 <div className="thumbnail-badge">
@@ -224,7 +221,7 @@ function Gallery() {
                 onClick={handleGeneratedClick}
               >
                 <img 
-                  src={generatedImage.url} 
+                  src={generatedResult.thumbnail_base64} 
                   alt="Generated" 
                 />
                 <div className="thumbnail-badge">
@@ -274,6 +271,9 @@ function Gallery() {
                   <span className="detection-count">
                     <span className="count-icon" style={{backgroundColor: '#FF0000'}}></span>
                     Faces: {countFaces(selectedResult)}
+                  </span>
+                  <span className="image-dimensions">
+                    {selectedResult.width} × {selectedResult.height} px
                   </span>
                 </div>
               </div>

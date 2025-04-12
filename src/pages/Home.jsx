@@ -174,7 +174,7 @@ function Home() {
         throw new Error('No results returned from the server');
       }
       
-      // Navigate to gallery page with results
+      // Navigate to gallery page with results - now using the server-processed thumbnails
       navigate('/gallery', { 
         state: {
           referenceImages: referenceImages.map(img => ({ url: img.preview, name: img.name })),

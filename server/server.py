@@ -43,8 +43,8 @@ app.add_middleware(
 )
 
 # Initialize services
-face_detector = FaceDetector(min_detection_confidence=0.5)
-background_remover = BackgroundRemover(foreground_rect_scale=0.9)
+face_detector = FaceDetector(min_detection_confidence=0.9)
+background_remover = BackgroundRemover(foreground_rect_scale=0.95)
 
 def save_image(image, prefix, directory=NO_BG_DIR):
     """Save the image and return the file path"""
@@ -53,30 +53,6 @@ def save_image(image, prefix, directory=NO_BG_DIR):
     filepath = os.path.join(directory, filename)
     cv2.imwrite(filepath, image)
     return filepath
-
-def create_thumbnail(image, original_filename):
-    """Create a thumbnail version of the image"""
-    try:
-        # Create a smaller version (thumbnail)
-        max_size = 300
-        h, w = image.shape[:2]
-        if h > w:
-            new_h, new_w = max_size, int(w * max_size / h)
-        else:
-            new_h, new_w = int(h * max_size / w), max_size
-        
-        thumbnail = cv2.resize(image, (new_w, new_h))
-        
-        # Save thumbnail
-        timestamp = datetime.now().strftime('%Y%m%d%H%M%S%f')
-        thumb_filename = f"thumb_{os.path.basename(original_filename)}_{timestamp}.png"
-        thumb_filepath = os.path.join(THUMBNAILS_DIR, thumb_filename)
-        cv2.imwrite(thumb_filepath, thumbnail)
-        
-        return thumb_filepath
-    except Exception as e:
-        logging.error(f"Error creating thumbnail: {str(e)}")
-        return None
 
 def image_to_base64(image_path):
     """Convert an image file to base64 string"""
@@ -99,28 +75,31 @@ async def process_images(files: List[UploadFile] = File(...)):
             try:
                 logging.info(f"Processing image {i+1}: {file.filename}")
                 
-                # Process the uploaded image
-                original_image = await process_uploaded_image(file)
+                # Process the uploaded image - this now returns a resized version for processing
+                # Max dimension is set to 1024px by default in process_uploaded_image
+                processed_image = await process_uploaded_image(file)
                 
-                # Save original as thumbnail
-                thumb_path = create_thumbnail(original_image, file.filename)
+                # Get the dimensions of the processed image to store with face coordinates
+                img_height, img_width = processed_image.shape[:2]
+                
+                # Save processed image as thumbnail (it's already resized)
+                file_prefix = "reference" if i < len(files) - 1 else "generated"
+                thumb_path = save_image(processed_image, f"thumb_{file_prefix}", THUMBNAILS_DIR)
                 
                 # Remove the background
-                processed_image = background_remover.remove_background(original_image)
+                no_bg_image = background_remover.remove_background(processed_image)
                 
                 # Save the processed image (no background)
-                file_prefix = "reference" if i < len(files) - 1 else "generated"
-                image_path = save_image(processed_image, file_prefix, NO_BG_DIR)
+                image_path = save_image(no_bg_image, file_prefix, NO_BG_DIR)
                 
                 # Detect faces and save them
-                faces = face_detector.detect_faces(original_image, padding=0.1)
-                # Note: face_detector.detect_faces already saves face crops to the faces directory
+                faces = face_detector.detect_faces(processed_image, padding=0.1)
                 
                 # Convert images to base64 for direct embedding in response
                 image_base64 = image_to_base64(image_path)
-                thumb_base64 = image_to_base64(thumb_path) if thumb_path else None
+                thumb_base64 = image_to_base64(thumb_path)
                 
-                # Add results
+                # Add results with image dimensions
                 results.append({
                     'id': i,
                     'original_filename': file.filename,
@@ -128,7 +107,9 @@ async def process_images(files: List[UploadFile] = File(...)):
                     'image_path': image_path,
                     'image_base64': f"data:image/png;base64,{image_base64}",
                     'thumbnail_path': thumb_path,
-                    'thumbnail_base64': f"data:image/png;base64,{thumb_base64}" if thumb_base64 else None,
+                    'thumbnail_base64': f"data:image/png;base64,{thumb_base64}",
+                    'width': img_width,
+                    'height': img_height,
                     'faces': faces
                 })
                 

@@ -4,7 +4,7 @@ import logging
 import traceback
 
 class BackgroundRemover:
-    def __init__(self, foreground_rect_scale=0.9):
+    def __init__(self, foreground_rect_scale=0.95):
         """
         Initialize the background remover with configuration settings.
         
