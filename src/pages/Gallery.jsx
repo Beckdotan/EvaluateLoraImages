@@ -8,13 +8,15 @@ function Gallery() {
   
   // State for detection toggles
   const [showFaces, setShowFaces] = useState(true);
-  const [showHeads, setShowHeads] = useState(true);
-  const [showBodies, setShowBodies] = useState(true);
   
   // State for selected image
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedType, setSelectedType] = useState(null); // 'reference' or 'generated'
   const [selectedIndex, setSelectedIndex] = useState(null);
+  
+  // State for background removal
+  const [removedBackgroundImages, setRemovedBackgroundImages] = useState({});
+  const [isProcessing, setIsProcessing] = useState(false);
   
   // Refs for canvas and image
   const canvasRef = useRef(null);
@@ -55,10 +57,51 @@ function Gallery() {
       setSelectedImage(generatedImage.url);
       setSelectedType('generated');
       setSelectedIndex(0);
+      
+      // Process the default selected image
+      processBackgroundRemoval(generatedImage.url, 'generated', 0);
     }
   }, [selectedImage, generatedImage]);
 
-  // Helper functions to get counts
+  // Function to process background removal
+  const processBackgroundRemoval = async (imageUrl, type, index) => {
+    // Check if we already processed this image
+    const imageKey = `${type}-${index}`;
+    if (removedBackgroundImages[imageKey]) {
+      return; // Already processed
+    }
+    
+    setIsProcessing(true);
+    
+    try {
+      // Here you would typically call an API for background removal
+      // For demonstration, we'll simulate the process with a timeout
+      
+      // In a real implementation, you would:
+      // 1. Send the image to a background removal API (like Remove.bg, Cloudinary, etc.)
+      // 2. Get back the processed image URL
+      // 3. Store it in state
+      
+      // Simulating API call with timeout
+      setTimeout(() => {
+        // For now, we'll just use the same image URL
+        // In a real implementation, this would be the URL of the processed image
+        const processedImageUrl = imageUrl;
+        
+        setRemovedBackgroundImages(prev => ({
+          ...prev,
+          [imageKey]: processedImageUrl
+        }));
+        
+        setIsProcessing(false);
+      }, 1000);
+    } catch (error) {
+      console.error("Error removing background:", error);
+      setIsProcessing(false);
+    }
+  };
+
+  // Function to get counts
   const countDetections = (detections, type) => {
     if (!detections || !detections[type]) return 0;
     return detections[type].length;
@@ -114,7 +157,7 @@ function Gallery() {
     
     console.log("Scale factors:", { scaleX, scaleY, offsetX, offsetY });
     
-    // Draw face detections
+    // Draw face detections only
     if (showFaces && detections.face && detections.face.length > 0) {
       ctx.strokeStyle = '#FF0000';
       ctx.lineWidth = 3;
@@ -155,73 +198,7 @@ function Gallery() {
       });
     }
     
-    // Draw head detections
-    if (showHeads && detections.head && detections.head.length > 0) {
-      ctx.strokeStyle = '#00FF00';
-      ctx.lineWidth = 3;
-      
-      detections.head.forEach(head => {
-        if (head.coordinates) {
-          console.log("Processing head coordinates:", head.coordinates);
-          let [x1, y1, x2, y2] = head.coordinates;
-          
-          // Check if the format is [x, y, width, height] instead of [x1, y1, x2, y2]
-          if (x2 < x1 || y2 < y1) {
-            x2 = x1 + x2;
-            y2 = y1 + y2;
-          }
-          
-          // Scale coordinates to displayed image size and add offset
-          const scaledX1 = (x1 * scaleX) + offsetX;
-          const scaledY1 = (y1 * scaleY) + offsetY;
-          const scaledWidth = (x2 - x1) * scaleX;
-          const scaledHeight = (y2 - y1) * scaleY;
-          
-          console.log("Drawing head rectangle:", { 
-            x: scaledX1, 
-            y: scaledY1, 
-            width: scaledWidth, 
-            height: scaledHeight 
-          });
-          
-          ctx.strokeRect(scaledX1, scaledY1, scaledWidth, scaledHeight);
-        }
-      });
-    }
-    
-    // Draw body detections
-    if (showBodies && detections.body && detections.body.length > 0) {
-      ctx.strokeStyle = '#0000FF';
-      ctx.lineWidth = 3;
-      
-      detections.body.forEach(body => {
-        if (body.coordinates) {
-          console.log("Processing body coordinates:", body.coordinates);
-          let [x1, y1, x2, y2] = body.coordinates;
-          
-          // Check if the format is [x, y, width, height] instead of [x1, y1, x2, y2]
-          if (x2 < x1 || y2 < y1) {
-            x2 = x1 + x2;
-            y2 = y1 + y2;
-          }
-          
-          // Scale coordinates to displayed image size and add offset
-          const scaledX1 = (x1 * scaleX) + offsetX;
-          const scaledY1 = (y1 * scaleY) + offsetY;
-          const scaledWidth = (x2 - x1) * scaleX;
-          const scaledHeight = (y2 - y1) * scaleY;
-          
-          console.log("Drawing body rectangle:", { 
-            x: scaledX1, 
-            y: scaledY1, 
-            width: scaledWidth, 
-            height: scaledHeight 
-          });
-          
-          ctx.strokeRect(scaledX1, scaledY1, scaledWidth, scaledHeight);
-        }
-      });
-    }
+    // Removed head and body detection code
   };
   
   // Redraw detections when relevant states change
@@ -265,6 +242,17 @@ function Gallery() {
     setSelectedImage(url);
     setSelectedType(type);
     setSelectedIndex(index);
+    
+    // Process background removal if not already done
+    processBackgroundRemoval(url, type, index);
+  };
+
+  // Get the image to display in the main view
+  const getDisplayImage = () => {
+    if (!selectedType || !selectedIndex) return selectedImage;
+    
+    const imageKey = `${selectedType}-${selectedIndex}`;
+    return removedBackgroundImages[imageKey] || selectedImage;
   };
 
   return (
@@ -286,8 +274,7 @@ function Gallery() {
                 />
                 <div className="thumbnail-badge">
                   <span className="face-count">{countDetections(referenceDetections[index], 'face')}</span>
-                  <span className="head-count">{countDetections(referenceDetections[index], 'head')}</span>
-                  <span className="body-count">{countDetections(referenceDetections[index], 'body')}</span>
+                  {/* Removed head and body count badges */}
                 </div>
               </div>
             ))}
@@ -307,8 +294,7 @@ function Gallery() {
               />
               <div className="thumbnail-badge">
                 <span className="face-count">{countDetections(generatedDetections, 'face')}</span>
-                <span className="head-count">{countDetections(generatedDetections, 'head')}</span>
-                <span className="body-count">{countDetections(generatedDetections, 'body')}</span>
+                {/* Removed head and body count badges */}
               </div>
             </div>
           </div>
@@ -324,22 +310,6 @@ function Gallery() {
               <span className="btn-icon" style={{backgroundColor: '#FF0000'}}></span>
               <span>Faces</span>
             </button>
-            
-            <button 
-              className={`control-btn ${showHeads ? 'active' : ''}`}
-              onClick={() => setShowHeads(!showHeads)}
-            >
-              <span className="btn-icon" style={{backgroundColor: '#00FF00'}}></span>
-              <span>Heads</span>
-            </button>
-            
-            <button 
-              className={`control-btn ${showBodies ? 'active' : ''}`}
-              onClick={() => setShowBodies(!showBodies)}
-            >
-              <span className="btn-icon" style={{backgroundColor: '#0000FF'}}></span>
-              <span>Bodies</span>
-            </button>
           </div>
         </div>
         
@@ -351,11 +321,17 @@ function Gallery() {
       {/* Right panel - Selected image with detection overlays */}
       <div className="details-panel">
         <div className="selected-image-container">
+          {isProcessing && (
+            <div className="processing-overlay">
+              <p>Processing image...</p>
+            </div>
+          )}
+          
           {selectedImage && (
             <>
               <img 
                 ref={imageRef}
-                src={selectedImage} 
+                src={getDisplayImage()} 
                 alt="Selected" 
               />
               <canvas 
@@ -376,18 +352,6 @@ function Gallery() {
                   Faces: {selectedType === 'generated' 
                     ? countDetections(generatedDetections, 'face')
                     : countDetections(referenceDetections[selectedIndex], 'face')}
-                </span>
-                <span className="detection-count head-count">
-                  <span className="count-icon" style={{backgroundColor: '#00FF00'}}></span>
-                  Heads: {selectedType === 'generated'
-                    ? countDetections(generatedDetections, 'head')
-                    : countDetections(referenceDetections[selectedIndex], 'head')}
-                </span>
-                <span className="detection-count body-count">
-                  <span className="count-icon" style={{backgroundColor: '#0000FF'}}></span>
-                  Bodies: {selectedType === 'generated'
-                    ? countDetections(generatedDetections, 'body')
-                    : countDetections(referenceDetections[selectedIndex], 'body')}
                 </span>
               </div>
             </div>
