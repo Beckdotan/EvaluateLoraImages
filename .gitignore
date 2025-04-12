@@ -24,5 +24,6 @@ yarn-error.log*
 *.swo
 
 server/detections/*
+server/.env
 
 server/output/*

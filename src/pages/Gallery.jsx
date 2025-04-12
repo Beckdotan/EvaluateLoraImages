@@ -233,7 +233,13 @@ function Gallery() {
         </div>
         
         <div className="bottom-controls">
-          <Link to="/" className="btn">Upload More Images</Link>
+          <Link 
+            to="/analysis" 
+            className="btn primary" 
+            state={{ referenceImages, generatedImage, results }}
+          >
+            Analyze Images
+          </Link>
         </div>
       </div>
       
