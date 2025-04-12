@@ -118,16 +118,20 @@
   z-index: 2;
 }
 
-.image-info-bar {
+/* Updated controls bar for right panel */
+.image-controls-bar {
   padding: 1rem;
   background-color: rgba(0, 0, 0, 0.5);
   border-top: 1px solid #444;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
 }
 
 .image-info {
   display: flex;
-  justify-content: space-between;
-  align-items: center;
+  flex-direction: column;
+  gap: 0.5rem;
 }
 
 .image-info h3 {
@@ -144,6 +148,7 @@
   display: flex;
   align-items: center;
   gap: 0.25rem;
+  font-size: 0.875rem;
 }
 
 .count-icon {
@@ -155,14 +160,8 @@
 
 /* Detection Controls */
 .detection-controls {
-  margin-top: 1rem;
-  margin-bottom: 1rem;
-}
-
-.control-buttons {
   display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
+  gap: 1rem;
 }
 
 .control-btn {
@@ -172,10 +171,11 @@
   background-color: #333;
   border: none;
   color: white;
-  padding: 0.5rem;
+  padding: 0.5rem 0.75rem;
   border-radius: 4px;
   cursor: pointer;
   transition: background-color 0.2s ease;
+  font-size: 0.875rem;
 }
 
 .control-btn:hover {
@@ -188,8 +188,8 @@
 
 .btn-icon {
   display: inline-block;
-  width: 16px;
-  height: 16px;
+  width: 14px;
+  height: 14px;
   border-radius: 3px;
 }
 
@@ -236,5 +236,15 @@
   
   .details-panel {
     min-height: 500px;
+  }
+  
+  .image-controls-bar {
+    flex-direction: column;
+    gap: 1rem;
+  }
+  
+  .detection-controls {
+    width: 100%;
+    justify-content: space-between;
   }
 }

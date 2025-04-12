@@ -6,14 +6,16 @@ function Gallery() {
   const location = useLocation();
   const { referenceImages, generatedImage, results } = location.state || {};
   
-  // State for face detection toggle
+  // Toggle states
   const [showFaces, setShowFaces] = useState(true);
+  const [showBackgroundRemoved, setShowBackgroundRemoved] = useState(true);
   
   // State for selected image
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedResult, setSelectedResult] = useState(null);
   const [selectedIndex, setSelectedIndex] = useState(null);
   const [selectedType, setSelectedType] = useState(null); // 'reference' or 'generated'
+  const [selectedOriginalImage, setSelectedOriginalImage] = useState(null);
   
   // Container ref for getting proper dimensions
   const containerRef = useRef(null);
@@ -43,8 +45,9 @@ function Gallery() {
       setSelectedResult(generatedResult);
       setSelectedType('generated');
       setSelectedIndex(0);
+      setSelectedOriginalImage(generatedImage.url);
     }
-  }, [selectedImage, generatedResult]);
+  }, [selectedImage, generatedResult, generatedImage]);
 
   // Function to draw face detection overlays on the canvas
   const drawFaceDetections = () => {
@@ -53,7 +56,6 @@ function Gallery() {
     const container = containerRef.current;
     
     if (!canvas || !image || !container || !selectedResult) {
-      console.log("Missing requirements for drawing:", { canvas, image, container, selectedResult });
       return;
     }
     
@@ -85,14 +87,6 @@ function Gallery() {
       y: (containerRect.height - imageRect.height) / 2
     };
     
-    console.log("Drawing parameters:", {
-      containerSize: { width: containerRect.width, height: containerRect.height },
-      imageDisplaySize: { width: imageRect.width, height: imageRect.height },
-      imageNaturalSize: { width: image.naturalWidth, height: image.naturalHeight },
-      scale,
-      offset
-    });
-    
     // Draw face detections
     ctx.strokeStyle = '#FF0000';  // Red for faces
     ctx.lineWidth = 2;
@@ -106,11 +100,6 @@ function Gallery() {
         const scaledY = y1 * scale.y + offset.y;
         const scaledWidth = (x2 - x1) * scale.x;
         const scaledHeight = (y2 - y1) * scale.y;
-        
-        console.log(`Face ${index} coordinates:`, {
-          original: { x1, y1, x2, y2 },
-          scaled: { x: scaledX, y: scaledY, width: scaledWidth, height: scaledHeight }
-        });
         
         // Draw rectangle
         ctx.strokeRect(scaledX, scaledY, scaledWidth, scaledHeight);
@@ -129,10 +118,19 @@ function Gallery() {
     });
   };
   
+  // Get the image to display based on toggles
+  const getDisplayImage = () => {
+    if (!selectedResult) return null;
+    
+    return showBackgroundRemoved 
+      ? selectedResult.image_base64  // Background removed image
+      : selectedOriginalImage;       // Original image with background
+  };
+  
   // Redraw detections when relevant states change
   useEffect(() => {
     drawFaceDetections();
-  }, [selectedImage, selectedResult, showFaces]);
+  }, [selectedImage, selectedResult, showFaces, showBackgroundRemoved]);
   
   // Add event listener for window resize
   useEffect(() => {
@@ -144,13 +142,12 @@ function Gallery() {
     return () => {
       window.removeEventListener('resize', handleResize);
     };
-  }, [selectedImage, selectedResult, showFaces]);
+  }, [selectedImage, selectedResult, showFaces, showBackgroundRemoved]);
   
   // Handle image load
   useEffect(() => {
     if (imageRef.current) {
       const handleImageLoad = () => {
-        console.log("Image loaded, drawing detections");
         // Give browser time to calculate proper dimensions
         setTimeout(drawFaceDetections, 100);
       };
@@ -161,15 +158,18 @@ function Gallery() {
         imageRef.current.onload = handleImageLoad;
       }
     }
-  }, [selectedImage]);
+  }, [selectedImage, showBackgroundRemoved]);
 
   // Handle reference thumbnail click
   const handleReferenceClick = (resultIndex) => {
     const result = referenceResults[resultIndex];
+    const originalImage = referenceImages[resultIndex].url;
+    
     setSelectedImage(result.image_base64);
     setSelectedResult(result);
     setSelectedType('reference');
     setSelectedIndex(resultIndex);
+    setSelectedOriginalImage(originalImage);
   };
 
   // Handle generated image click
@@ -179,6 +179,7 @@ function Gallery() {
       setSelectedResult(generatedResult);
       setSelectedType('generated');
       setSelectedIndex(0);
+      setSelectedOriginalImage(generatedImage.url);
     }
   };
 
@@ -202,7 +203,7 @@ function Gallery() {
                 onClick={() => handleReferenceClick(index)}
               >
                 <img 
-                  src={result.thumbnail_base64 || result.image_base64} 
+                  src={referenceImages[index].url} 
                   alt={`Reference ${index + 1}`} 
                 />
                 <div className="thumbnail-badge">
@@ -223,7 +224,7 @@ function Gallery() {
                 onClick={handleGeneratedClick}
               >
                 <img 
-                  src={generatedResult.thumbnail_base64 || generatedResult.image_base64} 
+                  src={generatedImage.url} 
                   alt="Generated" 
                 />
                 <div className="thumbnail-badge">
@@ -234,35 +235,22 @@ function Gallery() {
           </div>
         </div>
         
-        <div className="detection-controls">
-          <h3>Detection Controls</h3>
-          <div className="control-buttons">
-            <button 
-              className={`control-btn ${showFaces ? 'active' : ''}`}
-              onClick={() => setShowFaces(!showFaces)}
-            >
-              <span className="btn-icon" style={{backgroundColor: '#FF0000'}}></span>
-              <span>Face Detection</span>
-            </button>
-          </div>
-        </div>
-        
         <div className="bottom-controls">
           <Link to="/" className="btn">Upload More Images</Link>
         </div>
       </div>
       
-      {/* Right panel - Selected image with detection overlays */}
+      {/* Right panel - Selected image with detection overlays and controls */}
       <div className="details-panel">
         <div 
           ref={containerRef}
           className="selected-image-container"
         >
-          {selectedImage && (
+          {selectedResult && (
             <>
               <img 
                 ref={imageRef}
-                src={selectedImage} 
+                src={getDisplayImage()} 
                 alt="Selected" 
               />
               <canvas 
@@ -273,21 +261,41 @@ function Gallery() {
           )}
         </div>
         
-        <div className="image-info-bar">
+        <div className="image-controls-bar">
           {selectedResult && (
-            <div className="image-info">
-              <h3>
-                {selectedType === 'generated' 
-                  ? 'Generated Image' 
-                  : `Reference Image ${selectedIndex + 1}`}
-              </h3>
-              <div className="detection-counts">
-                <span className="detection-count">
-                  <span className="count-icon" style={{backgroundColor: '#FF0000'}}></span>
-                  Faces: {countFaces(selectedResult)}
-                </span>
+            <>
+              <div className="image-info">
+                <h3>
+                  {selectedType === 'generated' 
+                    ? 'Generated Image' 
+                    : `Reference Image ${selectedIndex + 1}`}
+                </h3>
+                <div className="detection-counts">
+                  <span className="detection-count">
+                    <span className="count-icon" style={{backgroundColor: '#FF0000'}}></span>
+                    Faces: {countFaces(selectedResult)}
+                  </span>
+                </div>
               </div>
-            </div>
+              
+              <div className="detection-controls">
+                <button 
+                  className={`control-btn ${showFaces ? 'active' : ''}`}
+                  onClick={() => setShowFaces(!showFaces)}
+                >
+                  <span className="btn-icon" style={{backgroundColor: '#FF0000'}}></span>
+                  <span>Face Detection</span>
+                </button>
+                
+                <button 
+                  className={`control-btn ${showBackgroundRemoved ? 'active' : ''}`}
+                  onClick={() => setShowBackgroundRemoved(!showBackgroundRemoved)}
+                >
+                  <span className="btn-icon" style={{backgroundColor: '#00BFFF'}}></span>
+                  <span>Remove Background</span>
+                </button>
+              </div>
+            </>
           )}
         </div>
       </div>
