@@ -286,3 +286,97 @@ class GeminiVisualAnalysisService:
         prompt = self.prompts.body_analysis_prompt.format(count=len(reference_image_paths))
 
         return self._generate_response_gemini(prompt, all_image_paths)
+
+    def analyze_improvements(self, face_analysis: str, body_analysis: str) -> str:
+        """
+        Analyzes the face and body analysis results to generate specific improvement suggestions.
+
+        Args:
+            face_analysis: The result from face analysis
+            body_analysis: The result from body analysis
+
+        Returns:
+            A string containing improvement suggestions
+        """
+        log.info("Generating improvement suggestions based on analysis results")
+
+        # Skip if either analysis contains an error
+        if face_analysis.startswith("Error:") or body_analysis.startswith("Error:"):
+            return "Error: Cannot generate improvements due to analysis errors."
+
+        # Construct the prompt for improvements
+        prompt = self.prompts.improvement_prompt
+
+        # Combine analyses for context
+        combined_analysis = f"Face Analysis:\n{face_analysis}\n\nBody Analysis:\n{body_analysis}"
+
+        # Use new function to send the prompt and combined analysis to Gemini
+        return self._generate_text_only_response(prompt, combined_analysis)
+
+    def _generate_text_only_response(self, system_prompt: str, user_message: str) -> str:
+        """
+        Generates a text-only response by calling the Google Gemini API without images.
+
+        Args:
+            system_prompt (str): The system prompt/instruction for the model.
+            user_message (str): The user message/content to analyze.
+
+        Returns:
+            str: The generated textual response from the model API or an error message.
+        """
+        if not self.model:
+            log.error("Cannot make API call: Gemini model is not initialized.")
+            return "Error: Analysis service is not properly configured (Model not loaded)."
+
+        # Construct the complete prompt for Gemini API
+        complete_prompt = f"{system_prompt}\n\nContent to analyze:\n{user_message}"
+
+        log.info(f"Sending text-only request to Gemini API ({MODEL_NAME}).")
+
+        try:
+            # Make the API Call
+            response = self.model.generate_content(
+                complete_prompt,
+                generation_config=self.generation_config,
+                safety_settings=self.safety_settings,
+                stream=False  # Get the full response at once
+            )
+
+            # Process Response - similar logic to _generate_response_gemini
+            if not response.candidates:
+                log.warning("Gemini API returned no candidates. Prompt possibly blocked.")
+                block_reason = getattr(response.prompt_feedback, 'block_reason', 'Unknown')
+                block_details = getattr(response.prompt_feedback, 'block_reason_message', 'No details')
+                return f"Error: Analysis request blocked by safety filters (Reason: {block_reason}, Details: {block_details})."
+
+            # Check the finish reason of the first candidate
+            first_candidate = response.candidates[0]
+            finish_reason = getattr(first_candidate, 'finish_reason', None)
+
+            if finish_reason == 1:  # Successful completion
+                log.info("Received successful response from Gemini API.")
+
+                try:
+                    analysis_text = response.text
+                    return analysis_text
+                except Exception as e:
+                    log.error(f"Error accessing response text: {e}")
+                    return f"Error: Failed to extract text from analysis response: {e}"
+
+                return analysis_text.strip()
+            else:
+                log.error(f"Gemini API call failed with finish reason: {finish_reason}")
+                error_text = ""
+                try:
+                    error_text = response.text
+                except Exception:
+                    pass
+                return f"Error: Analysis failed with reason: {finish_reason}. {error_text}".strip()
+
+        except Exception as e:
+            log.error(f"Error calling Gemini API: {e}", exc_info=True)
+            if isinstance(e, types.BlockedPromptException):
+                return "Error: Analysis request blocked by safety filters before generation started."
+            if isinstance(e, types.StopCandidateException):
+                return "Error: Analysis generation stopped unexpectedly by the API."
+            return f"Error: Failed to communicate with analysis service ({e.__class__.__name__})."

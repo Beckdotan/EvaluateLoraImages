@@ -347,12 +347,20 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
             # Return a generic server error, specific details are in logs
             raise HTTPException(status_code=502, detail="Analysis services failed to process the request.")
 
+        # --- Generate Improvement Suggestions ---
+        improvement_suggestions = gemini_analysis_service.analyze_improvements(
+            face_analysis, body_analysis
+        )
+        logging.info("Improvement suggestions generated.")
+        logging.info(f"Service Improvement Suggestions: {improvement_suggestions}")
+
         # --- Return Successful Response ---
         return {
             "reference_ids": reference_ids,
             "generated_id": generated_id,
             "face_analysis": face_analysis,
-            "body_analysis": body_analysis
+            "body_analysis": body_analysis,
+            "improvement_suggestions": improvement_suggestions
         }
 
     except HTTPException as http_exc:

@@ -142,6 +142,15 @@ function Analysis() {
       
       {analysisResults && (
         <div className="analysis-results">
+
+          
+          <div className="analysis-section">
+            <h2>Improvement Suggestions</h2>
+            <div className="analysis-content markdown-content">
+              <ReactMarkdown>{analysisResults.improvement_suggestions}</ReactMarkdown>
+            </div>
+          </div>
+
           <div className="analysis-section">
             <h2>Facial Features Analysis</h2>
             <div className="analysis-content markdown-content">
@@ -155,6 +164,7 @@ function Analysis() {
               <ReactMarkdown>{analysisResults.body_analysis}</ReactMarkdown>
             </div>
           </div>
+
         </div>
       )}
       
