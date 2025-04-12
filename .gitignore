@@ -5,6 +5,7 @@ node_modules/
 .env.development.local
 .env.test.local
 .env.production.local
+.pyc
 
 npm-debug.log*
 yarn-debug.log*
@@ -25,4 +26,3 @@ yarn-error.log*
 server/detections/*
 
 server/output/*
-*.pyc
