@@ -43,15 +43,20 @@ app.add_middleware(
 )
 
 # Initialize services
-face_detector = FaceDetector(min_detection_confidence=0.9)
+face_detector = FaceDetector(min_detection_confidence=0.8)
 background_remover = BackgroundRemover(foreground_rect_scale=0.95)
 
 def save_image(image, prefix, directory=NO_BG_DIR):
-    """Save the image and return the file path"""
+    """Save image (including alpha channel if present) to PNG file"""
     timestamp = datetime.now().strftime('%Y%m%d%H%M%S%f')
     filename = f"{prefix}_{timestamp}.png"
     filepath = os.path.join(directory, filename)
-    cv2.imwrite(filepath, image)
+
+    # Save PNG, preserving all 4 channels
+    success = cv2.imwrite(filepath, image)
+    if not success:
+        logging.error("Failed to write image to disk")
+
     return filepath
 
 def image_to_base64(image_path):
