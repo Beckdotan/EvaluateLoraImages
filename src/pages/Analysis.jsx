@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { useLocation, Link } from 'react-router-dom';
+import ReactMarkdown from 'react-markdown';
 import './Analysis.css';
 
 function Analysis() {
@@ -143,15 +144,15 @@ function Analysis() {
         <div className="analysis-results">
           <div className="analysis-section">
             <h2>Facial Features Analysis</h2>
-            <div className="analysis-content">
-              <p>{analysisResults.face_analysis}</p>
+            <div className="analysis-content markdown-content">
+              <ReactMarkdown>{analysisResults.face_analysis}</ReactMarkdown>
             </div>
           </div>
           
           <div className="analysis-section">
             <h2>Body Features Analysis</h2>
-            <div className="analysis-content">
-              <p>{analysisResults.body_analysis}</p>
+            <div className="analysis-content markdown-content">
+              <ReactMarkdown>{analysisResults.body_analysis}</ReactMarkdown>
             </div>
           </div>
         </div>

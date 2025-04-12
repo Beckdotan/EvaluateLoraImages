@@ -294,10 +294,8 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
         return {
             "reference_ids": reference_ids,
             "generated_id": generated_id,
-            "analysis": {
-                "face": face_analysis,
-                "body": body_analysis
-            }
+            "face_analysis": face_analysis,
+            "body_analysis": body_analysis
         }
 
     except HTTPException as http_exc:
