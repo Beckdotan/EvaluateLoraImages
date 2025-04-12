@@ -5,14 +5,17 @@ import logging
 from datetime import datetime
 import os
 
+# Define directory for face crops
+FACES_DIR = os.path.join('output', 'faces')
+
 class FaceDetector:
     def __init__(self, min_detection_confidence=0.5):
         self.mp_face_detection = mp.solutions.face_detection
         self.detector = self.mp_face_detection.FaceDetection(
             min_detection_confidence=min_detection_confidence
         )
-        # Create output directories if they don't exist
-        os.makedirs('output/face_crops', exist_ok=True)
+        # Create output directory if it doesn't exist
+        os.makedirs(FACES_DIR, exist_ok=True)
 
     def detect_faces(self, image, padding=0.0):
         """
@@ -74,7 +77,7 @@ class FaceDetector:
         try:
             timestamp = datetime.now().strftime('%Y%m%d%H%M%S%f')
             filename = f"face_{timestamp}.png"
-            filepath = os.path.join('output/face_crops', filename)
+            filepath = os.path.join(FACES_DIR, filename)
             cv2.imwrite(filepath, face_img)
             return filepath
         except Exception as e:
