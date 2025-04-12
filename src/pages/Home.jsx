@@ -42,6 +42,41 @@ function Home() {
     }
   }
 
+  // Function to detect and fix image orientation
+  const fixImageOrientation = async (file) => {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const img = new Image();
+        img.onload = () => {
+          // Create a canvas element
+          const canvas = document.createElement('canvas');
+          const ctx = canvas.getContext('2d');
+          
+          // Set proper canvas dimensions
+          canvas.width = img.width;
+          canvas.height = img.height;
+          
+          // Draw the image with correct orientation
+          ctx.drawImage(img, 0, 0, img.width, img.height);
+          
+          // Convert canvas to blob
+          canvas.toBlob((blob) => {
+            const correctedFile = new File([blob], file.name, {
+              type: 'image/jpeg',
+              lastModified: Date.now()
+            });
+            resolve(correctedFile);
+          }, 'image/jpeg', 0.95);
+        };
+        img.onerror = () => reject(new Error('Failed to load image'));
+        img.src = e.target.result;
+      };
+      reader.onerror = () => reject(new Error('Failed to read file'));
+      reader.readAsDataURL(file);
+    });
+  }
+
   const handleReferenceImageDrop = async (acceptedFiles) => {
     setError('');
     setIsConverting(true);
@@ -55,6 +90,14 @@ function Home() {
           // Convert HEIC files to JPEG
           if (isHeicFile(file)) {
             processedFile = await convertHeicToJpeg(file);
+          }
+          
+          // Fix orientation if needed
+          try {
+            processedFile = await fixImageOrientation(processedFile);
+          } catch (orientationError) {
+            console.warn('Could not fix orientation:', orientationError);
+            // Continue with original file if orientation fix fails
           }
           
           // Create preview URL
@@ -92,6 +135,14 @@ function Home() {
         // Convert HEIC file to JPEG if necessary
         if (isHeicFile(file)) {
           file = await convertHeicToJpeg(file);
+        }
+        
+        // Fix orientation if needed
+        try {
+          file = await fixImageOrientation(file);
+        } catch (orientationError) {
+          console.warn('Could not fix orientation:', orientationError);
+          // Continue with original file if orientation fix fails
         }
         
         setGeneratedImage(Object.assign(file, {
@@ -174,7 +225,7 @@ function Home() {
         throw new Error('No results returned from the server');
       }
       
-      // Navigate to gallery page with results - now using the server-processed thumbnails
+      // Navigate to gallery page with results
       navigate('/gallery', { 
         state: {
           referenceImages: referenceImages.map(img => ({ url: img.preview, name: img.name })),
@@ -201,15 +252,15 @@ function Home() {
       <form onSubmit={handleSubmit}>
         <div className="dropzone-section">
           <h3>Reference Images</h3>
-          <p>Upload 1-15 reference photos</p>
+          <p>Upload 1-5 reference photos</p>
           
           <Dropzone 
             onDrop={handleReferenceImageDrop}
             accept={{
               'image/*': ['.jpeg', '.jpg', '.png', '.heic', '.heif']
             }}
-            maxFiles={15}
-            disabled={referenceImages.length >= 15 || isUploading || isConverting}
+            maxFiles={5}
+            disabled={referenceImages.length >= 5 || isUploading || isConverting}
           >
             {({getRootProps, getInputProps}) => (
               <div 
@@ -218,7 +269,7 @@ function Home() {
               >
                 <input {...getInputProps()} />
                 {isConverting ? (
-                  <p>Converting HEIC images, please wait...</p>
+                  <p>Converting images, please wait...</p>
                 ) : (
                   <p>Drag & drop reference images here, or click to select files</p>
                 )}
@@ -264,7 +315,7 @@ function Home() {
               <div {...getRootProps()} className="dropzone">
                 <input {...getInputProps()} />
                 {isConverting ? (
-                  <p>Converting HEIC image, please wait...</p>
+                  <p>Converting image, please wait...</p>
                 ) : (
                   <p>Drag & drop generated image here, or click to select file</p>
                 )}
