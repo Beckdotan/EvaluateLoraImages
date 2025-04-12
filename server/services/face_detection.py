@@ -12,7 +12,9 @@ class FaceDetector:
     def __init__(self, min_detection_confidence=0.5):
         self.mp_face_detection = mp.solutions.face_detection
         self.detector = self.mp_face_detection.FaceDetection(
-            min_detection_confidence=min_detection_confidence
+            min_detection_confidence=min_detection_confidence,
+            model_selection=1  # Use model 1 for full range detection (0-5m)
+
         )
         # Create output directory if it doesn't exist
         os.makedirs(FACES_DIR, exist_ok=True)
