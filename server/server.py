@@ -10,13 +10,12 @@ import cv2
 import numpy as np
 from datetime import datetime
 import base64
+import shutil
 from utils.image_processing import process_uploaded_image
 from services.face_detection import FaceDetector
 from services.background_removal import BackgroundRemover
 from services.visual_analysis import VisualAnalysisService
 from services.gemini_visual_analysis import GeminiVisualAnalysisService
-
-
 
 # Define output directories
 OUTPUT_DIR = 'output'
@@ -51,9 +50,6 @@ face_detector = FaceDetector(min_detection_confidence=0.8)
 background_remover = BackgroundRemover(foreground_rect_scale=0.95)
 try:
     visual_analysis_service = VisualAnalysisService()
-    # Optional: Add a check here if initialization logged an error due to missing token
-    # if visual_analysis_service.api_token is None:
-    #     print("WARNING: VisualAnalysisService initialized without API token. Analysis will fail.")
 except Exception as e:
     logging.error(f"CRITICAL: Failed to initialize VisualAnalysisService: {e}")
     visual_analysis_service = None # Or raise the exception
@@ -61,8 +57,24 @@ except Exception as e:
 try:
     gemini_analysis_service = GeminiVisualAnalysisService()
 except Exception as e:
-    log.error(f"FATAL: Failed to initialize GeminiVisualAnalysisService: {e}", exc_info=True)
+    logging.error(f"FATAL: Failed to initialize GeminiVisualAnalysisService: {e}", exc_info=True)
     gemini_analysis_service = None # Ensure it's None if init fails
+
+def clean_output_directories():
+    """Clean all files from output directories before processing new images"""
+    directories = [FACES_DIR, NO_BG_DIR, THUMBNAILS_DIR]
+    for directory in directories:
+        logging.info(f"Cleaning directory: {directory}")
+        for filename in os.listdir(directory):
+            file_path = os.path.join(directory, filename)
+            try:
+                if os.path.isfile(file_path):
+                    os.unlink(file_path)
+                elif os.path.isdir(file_path):
+                    shutil.rmtree(file_path)
+                logging.info(f"Deleted: {file_path}")
+            except Exception as e:
+                logging.error(f"Error deleting {file_path}: {e}")
 
 def save_image(image, prefix, directory=NO_BG_DIR):
     """Save image (including alpha channel if present) to PNG file"""
@@ -90,6 +102,9 @@ async def process_images(files: List[UploadFile] = File(...)):
                 status_code=400, 
                 detail={"message": "At least one image is required"}
             )
+        
+        # Clean all output directories before processing new images
+        clean_output_directories()
         
         logging.info(f"Processing {len(files)} files")
         
@@ -223,10 +238,9 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
          raise HTTPException(status_code=503, detail="Visual analysis service is not available due to initialization error.")
 
     try:
-
         reference_ids = request_data.get('reference_ids', [])
         generated_id = request_data.get('generated_id')
-
+        
         # --- Validation of IDs ---
         if not isinstance(reference_ids, list) or not reference_ids:
              logging.warning("Validation failed: Missing or invalid reference_ids")
@@ -236,19 +250,19 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
             raise HTTPException(status_code=400, detail={"message": "A valid generated_id (string filename) is required"})
         logging.info(f"Extracted Reference IDs: {reference_ids}, Generated ID: {generated_id}")
 
-        # --- Get Full Image Paths ---
+        # --- Get Full Image Paths for Body Analysis ---
         reference_image_paths: List[str] = []
         for ref_id in reference_ids:
             # Basic security: prevent path traversal, use only filename part
             filename = os.path.basename(ref_id)
             if not filename: # Handle empty string case
-                 log.warning(f"Invalid empty reference ID provided.")
+                 logging.warning(f"Invalid empty reference ID provided.")
                  raise HTTPException(status_code=400, detail=f"Invalid reference filename provided: {ref_id}")
 
             path = os.path.join(NO_BG_DIR, filename)
 
             if not os.path.exists(path) or not os.path.isfile(path): # Check if it's actually a file
-                log.error(f"Reference image file not found or is not a file: {path} (from ID: {ref_id})")
+                logging.error(f"Reference image file not found or is not a file: {path} (from ID: {ref_id})")
                 raise HTTPException(status_code=404, detail=f"Reference image not found on server: {filename}")
             reference_image_paths.append(path)
 
@@ -267,28 +281,71 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
         logging.info(f"Constructed reference paths: {reference_image_paths}")
         logging.info(f"Constructed generated path: {generated_image_path}")
 
-        # --- Perform Analysis using the NEW Service ---
-        logging.info("Starting face analysis call using Gemini service...")
-        face_analysis = gemini_analysis_service.analyze_face_features(
-            reference_image_paths, generated_image_path
-        )
-        logging.info("Face analysis call completed.")
-        logging.info(f"Face Analysis Results: {face_analysis}")
+        # --- Get All Face Images ---
+        # Since we're cleaning the directories before each processing run,
+        # we can simply get all face images from the FACES_DIR
+        reference_face_paths = []
+        generated_face_path = None
+        
+        if os.path.exists(FACES_DIR):
+            face_files = sorted(os.listdir(FACES_DIR))
+            face_count = len(face_files)
+            
+            if face_count > 0:
+                # Assuming the faces are saved in the same order as the images are processed
+                # And the generated image is always the last one processed
+                if face_count > 1:  # At least one reference and one generated
+                    reference_face_paths = [os.path.join(FACES_DIR, f) for f in face_files[:-1]]
+                    generated_face_path = os.path.join(FACES_DIR, face_files[-1])
+                else:  # Only one face detected (the generated one)
+                    generated_face_path = os.path.join(FACES_DIR, face_files[0])
+                
+                logging.info(f"Found {len(reference_face_paths)} reference faces and 1 generated face")
+            else:
+                logging.warning("No face images found in faces directory")
+        else:
+            logging.warning(f"Faces directory does not exist: {FACES_DIR}")
+            
+        # --- Perform Face Analysis ---
+        if not reference_face_paths:
+            logging.warning("No reference face paths found, using error message for face analysis")
+            face_analysis = "Error: No faces detected in reference images."
+        elif not generated_face_path:
+            logging.warning("No generated face path found, using error message for face analysis")
+            face_analysis = "Error: No face detected in generated image."
+        else:
+            logging.info("Starting face analysis call using Gemini service...")
+            # Note that we're using the regular analyze_face_features method
+            # But we're providing face crops instead of full body images
+            face_analysis = gemini_analysis_service.analyze_face_features(
+                reference_face_paths, generated_face_path
+            )
+            logging.info("Face analysis call completed.")
+            logging.info(f"Face Analysis Results: {face_analysis}")
 
+        # --- Perform Body Analysis using the full images ---
         logging.info("Starting body analysis call using Gemini service...")
         body_analysis = gemini_analysis_service.analyze_body_features(
             reference_image_paths, generated_image_path
         )
         logging.info("Body analysis call completed.")
-        logging.info(f"Face Analysis Results: {body_analysis}")
-
+        logging.info(f"Body Analysis Results: {body_analysis}")
 
         # --- Check for Errors from Analysis Service ---
-        # The service methods should return strings starting with "Error:" on failure
-        if face_analysis.startswith("Error:") or body_analysis.startswith("Error:"):
-            logging.error(f"Analysis service returned an error. Face: '{face_analysis}', Body: '{body_analysis}'")
+        # Ensure we don't have None values before checking startswith
+        if face_analysis is None:
+            logging.error("Face analysis returned None")
+            face_analysis = "Error: Face analysis failed to return a result."
+            
+        if body_analysis is None:
+            logging.error("Body analysis returned None")
+            body_analysis = "Error: Body analysis failed to return a result."
+        
+        # Now check if both analyses failed
+        if face_analysis.startswith("Error:") and body_analysis.startswith("Error:"):
+            logging.error(f"Both analysis services returned errors. Face: '{face_analysis}', Body: '{body_analysis}'")
             # Return a generic server error, specific details are in logs
-            raise HTTPException(status_code=502, detail="Analysis service failed to process the request.")
+            raise HTTPException(status_code=502, detail="Analysis services failed to process the request.")
 
         # --- Return Successful Response ---
         return {
