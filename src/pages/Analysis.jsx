@@ -127,7 +127,7 @@ function Analysis() {
       {isLoading && (
         <div className="loading-container">
           <div className="loading-spinner"></div>
-          <p>Analyzing images with ViP-LLaVA...</p>
+          <p>Analyzing images with Gemini...</p>
           <p className="loading-note">This may take a moment as we perform detailed visual analysis</p>
         </div>
       )}

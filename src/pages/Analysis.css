@@ -12,7 +12,7 @@
   
   .reference-summary, .generated-summary {
     flex: 1;
-    background-color: #f5f5f5;
+    background-color: #4b4b4b;
     border-radius: 8px;
     padding: 15px;
     box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
@@ -77,7 +77,7 @@
   }
   
   .analysis-section {
-    background-color: white;
+    background-color: #4b4b4b;
     border-radius: 8px;
     padding: 20px;
     margin-bottom: 20px;
@@ -85,7 +85,7 @@
   }
   
   .analysis-section h2 {
-    color: #2c3e50;
+    color: lightgray;
     border-bottom: 2px solid #eee;
     padding-bottom: 10px;
     margin-bottom: 15px;
@@ -93,7 +93,7 @@
   
   .analysis-content {
     line-height: 1.6;
-    color: darkslategray;
+    color: lightgray;
   }
   
   /* Markdown Styling */
