@@ -6,6 +6,7 @@ from PIL import Image
 from dotenv import load_dotenv
 import google.generativeai as genai
 from google.generativeai import types  
+from config.prompts import GeminiPrompts  # Import the prompts class
 
 # Load environment variables (especially GOOGLE_API_KEY)
 load_dotenv()
@@ -31,7 +32,7 @@ class GeminiVisualAnalysisService:
         """
         logging.info(f"Initializing GeminiVisualAnalysisService with model: {MODEL_NAME}")
         self.model: Optional[genai.GenerativeModel] = None
-        
+        self.prompts = GeminiPrompts()  # Initialize the prompts class
         
         if not GOOGLE_API_KEY:
             logging.error("Google API Key (GOOGLE_API_KEY) not found in environment variables.")
@@ -50,12 +51,13 @@ class GeminiVisualAnalysisService:
 
         # Optional: Configure generation parameters if needed
         self.generation_config = types.GenerationConfig(
-            max_output_tokens=1024, # Adjust as needed for detailed analysis
+            max_output_tokens=2048, # Adjust as needed for detailed analysis
         )
 
         # Optional: Configure safety settings (adjust based on your content)
         self.safety_settings = {
             # Add safety settings if needed
+            
         }
 
 
@@ -267,14 +269,7 @@ class GeminiVisualAnalysisService:
         all_image_paths = valid_reference_paths + [generated_image_path]
         
         # Construct the prompt, explaining the image order
-        prompt = (
-             f"Analyze the faces in the provided images. The first {len(valid_reference_paths)} image(s) are reference faces, "
-             f"and the last image is the generated face. Compare the generated face to the references, focusing on these features: "
-             "overall face shape, eye color and shape, eyebrow shape and thickness, nose shape and size, lip shape and fullness, "
-             "jawline definition, chin shape, overall facial proportions, and apparent skin tone. "
-             "Clearly describe the similarities and differences found for each feature category where possible. "
-             "Conclude with an assessment of how well the generated face matches the reference(s)."
-        )
+        prompt = self.prompts.face_analysis_prompt.format(count=len(valid_reference_paths))
 
         # IMPORTANT: Return the result of the API call
         return self._generate_response_gemini(prompt, all_image_paths)
@@ -288,14 +283,6 @@ class GeminiVisualAnalysisService:
         all_image_paths = reference_image_paths + [generated_image_path]
 
         # Construct the prompt, explaining the image order
-        prompt = (
-             f"Analyze the bodies in the provided images. The first {len(reference_image_paths)} image(s) are references, "
-             f"and the last image is the generated one. Compare the generated body to the references, focusing on these features: "
-             "hair style and color, overall body size and build (e.g., thin, average, muscular, heavy), body proportions (e.g., limb length relative to torso), "
-             "apparent number of limbs, posture (if clearly discernible), and any highly distinct characteristics visible (e.g., significant muscle definition, pregnancy, visible disabilities affecting structure). "
-             "Ignore clothing details unless they directly reveal body shape or features mentioned above. "
-             "Clearly describe the similarities and differences found for each relevant feature category. "
-             "Conclude with an assessment of how well the generated body matches the reference(s)."
-        )
+        prompt = self.prompts.body_analysis_prompt.format(count=len(reference_image_paths))
 
         return self._generate_response_gemini(prompt, all_image_paths)
