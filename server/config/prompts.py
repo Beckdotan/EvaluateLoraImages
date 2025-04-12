@@ -228,11 +228,4 @@ class GeminiPrompts:
 
             """
     
-    @property
-    def improvement_prompt(self):
-        """Returns the prompt for improvement suggestions."""
-        return """
-        Based on the facial and body analysis provided, identify the 3-5 most critical improvements needed to make the generated image more similar to the reference image(s). For each improvement, provide specific, actionable guidance that a digital artist or painter would need to make the adjustments. Focus on concrete details like specific color adjustments, precise shape modifications, or exact proportion changes. Format each improvement point as a clear, numbered instruction that begins with an action verb. Ensure the suggestions are detailed enough for practical implementation but concise enough to be clearly understood.
-        """
-    
     
