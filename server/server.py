@@ -16,6 +16,7 @@ from services.face_detection import FaceDetector
 from services.background_removal import BackgroundRemover
 from services.visual_analysis import VisualAnalysisService
 from services.gemini_visual_analysis import GeminiVisualAnalysisService
+from services.piq_image_quality_detector import PIQImageQualityDetector
 
 # Define output directories
 OUTPUT_DIR = 'output'
@@ -54,12 +55,23 @@ except Exception as e:
     logging.error(f"CRITICAL: Failed to initialize VisualAnalysisService: {e}")
     visual_analysis_service = None # Or raise the exception
     
+# Initialize the Gemini Visual Analysis service
 try:
     gemini_analysis_service = GeminiVisualAnalysisService()
 except Exception as e:
     logging.error(f"FATAL: Failed to initialize GeminiVisualAnalysisService: {e}", exc_info=True)
     gemini_analysis_service = None # Ensure it's None if init fails
 
+
+# Initialize the Image quality detector
+try:
+    image_quality_detector = PIQImageQualityDetector()
+    logging.info("Successfully initialized PIQImageQualityDetector")
+except Exception as e:
+    logging.error(f"Failed to initialize SimpleAIImageQualityDetector: {e}", exc_info=True)
+    image_quality_detector = None
+    
+    
 def clean_output_directories():
     """Clean all files from output directories before processing new images"""
     directories = [FACES_DIR, NO_BG_DIR, THUMBNAILS_DIR]
@@ -232,10 +244,14 @@ async def get_face(face_id: str):
 async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
     logging.info("Entered analyze_images endpoint")
 
-    # --- Check if the service is available ---
+    # --- Check if the services are available ---
     if gemini_analysis_service is None:
-         logging.error("Request received but analysis service is unavailable.")
+         logging.error("Request received but Gemini analysis service is unavailable.")
          raise HTTPException(status_code=503, detail="Visual analysis service is not available due to initialization error.")
+         
+    if image_quality_detector is None:
+         logging.error("Request received but image quality detector is unavailable.")
+         raise HTTPException(status_code=503, detail="Image quality detector is not available due to initialization error.")
 
     try:
         reference_ids = request_data.get('reference_ids', [])
@@ -250,7 +266,7 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
             raise HTTPException(status_code=400, detail={"message": "A valid generated_id (string filename) is required"})
         logging.info(f"Extracted Reference IDs: {reference_ids}, Generated ID: {generated_id}")
 
-        # --- Get Full Image Paths for Body Analysis ---
+        # --- Get Full Image Paths for Analysis ---
         reference_image_paths: List[str] = []
         for ref_id in reference_ids:
             # Basic security: prevent path traversal, use only filename part
@@ -281,6 +297,35 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
         logging.info(f"Constructed reference paths: {reference_image_paths}")
         logging.info(f"Constructed generated path: {generated_image_path}")
 
+        # --- NEW: Perform Image Quality Analysis using PIQ ---
+        logging.info("Starting image quality analysis using PIQ metrics...")
+        try:
+            quality_analysis = image_quality_detector.analyze_image(generated_image_path)
+            
+            quality_score = quality_analysis.get("overall_score", 0)
+            is_acceptable = quality_analysis.get("is_acceptable", False)
+            quality_issues = quality_analysis.get("issues_summary", [])
+            quality_metrics = quality_analysis.get("metrics", {})
+            normalized_metrics = quality_analysis.get("normalized_metrics", {})
+            
+            logging.info(f"Image quality analysis completed. Score: {quality_score}, Acceptable: {is_acceptable}")
+            if quality_issues:
+                logging.info(f"Quality issues detected: {quality_issues}")
+                
+            # Log individual metrics
+            logging.info(f"BRISQUE: {quality_metrics.get('brisque', 'N/A')}, " + 
+                         f"NIQE: {quality_metrics.get('niqe', 'N/A')}, " +
+                         f"TV: {quality_metrics.get('total_variation', 'N/A')}")
+                
+        except Exception as e:
+            logging.error(f"Error in image quality analysis: {e}", exc_info=True)
+            quality_score = 0.5  # Neutral score
+            is_acceptable = True  # Don't block the process due to analysis error
+            quality_issues = [f"Error analyzing image quality: {str(e)}"]
+            quality_metrics = {}
+            normalized_metrics = {}
+            # Continue with the rest of the analysis
+        
         # --- Get All Face Images ---
         # Since we're cleaning the directories before each processing run,
         # we can simply get all face images from the FACES_DIR
@@ -348,18 +393,44 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
             raise HTTPException(status_code=502, detail="Analysis services failed to process the request.")
 
         # --- Generate Improvement Suggestions ---
+        # Create a quality info string with detailed metrics
+        quality_info = (
+            f"Image Quality Analysis:\n"
+            f"Overall Score: {quality_score:.2f}/1.00 ({['Not Acceptable', 'Acceptable'][is_acceptable]})\n"
+            f"BRISQUE Score: {quality_metrics.get('brisque', 'N/A')} (lower is better)\n"
+            f"NIQE Score: {quality_metrics.get('niqe', 'N/A')} (lower is better)\n"
+            f"Total Variation: {quality_metrics.get('total_variation', 'N/A')}\n"
+            f"Content Score: {quality_metrics.get('content', 'N/A')}\n"
+            f"Quality Issues: {', '.join(quality_issues) if quality_issues else 'None detected'}"
+        )
+        
+        # Modify the analyze_improvements call to include quality analysis
         improvement_suggestions = gemini_analysis_service.analyze_improvements(
-            face_analysis, body_analysis
+            f"{face_analysis}\n\n{quality_info}", body_analysis
         )
         logging.info("Improvement suggestions generated.")
         logging.info(f"Service Improvement Suggestions: {improvement_suggestions}")
 
-        # --- Return Successful Response ---
+        # --- Return Successful Response with Quality Analysis ---
         return {
             "reference_ids": reference_ids,
             "generated_id": generated_id,
             "face_analysis": face_analysis,
             "body_analysis": body_analysis,
+            "quality_analysis": {
+                "score": quality_score,
+                "is_acceptable": is_acceptable,
+                "issues": quality_issues,
+                "metrics": {
+                    "brisque": quality_metrics.get("brisque", None),
+                    "niqe": quality_metrics.get("niqe", None), 
+                    "total_variation": quality_metrics.get("total_variation", None),
+                    "content": quality_metrics.get("content", None)
+                },
+                "normalized_metrics": normalized_metrics,
+                "hand_analysis": quality_analysis.get("detailed_results", {}).get("hand_analysis", {})
+            },
+
             "improvement_suggestions": improvement_suggestions
         }
 

@@ -7,23 +7,17 @@ import requests
 from io import BytesIO
 import json
 import mediapipe as mp
-import img2score
-from img2score.models import NIQE, BRISQUE, CLIPIQA
+import torch
+import piq
 import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Dict, List, Any, Union
-import google.generativeai as genai
-from dotenv import load_dotenv
-from img2score.models import NIQE, BRISQUE, CLIPIQA
+import torchvision.transforms as transforms
 
-# Load environment variables (for Google API key)
-load_dotenv()
-
-class SimpleAIImageQualityDetector:
+class PIQImageQualityDetector:
     """
-    A simplified service that detects flaws in AI-generated images using img2score for 
-    general quality assessment, MediaPipe for hand analysis, and Google Gemini for 
-    visual analysis.
+    A service that detects flaws in AI-generated images using PIQ for general
+    quality assessment and MediaPipe for hand analysis.
     """
     
     def __init__(self):
@@ -32,8 +26,8 @@ class SimpleAIImageQualityDetector:
             level=logging.INFO,
             format='%(asctime)s - %(name)s - %(levelname)s - %(message)s'
         )
-        self.logger = logging.getLogger("SimpleAIImageQualityDetector")
-        self.logger.info("Initializing AI Image Quality Detector")
+        self.logger = logging.getLogger("PIQImageQualityDetector")
+        self.logger.info("Initializing PIQ Image Quality Detector")
         
         # Initialize MediaPipe Hands
         self.mp_hands = mp.solutions.hands
@@ -43,18 +37,17 @@ class SimpleAIImageQualityDetector:
             min_detection_confidence=0.5
         )
         
-        # Initialize img2score models
-        self.logger.info("Loading img2score quality assessment models")
-        try:
-            self.niqe = NIQE()
-            self.brisque = BRISQUE()
-            self.clipiqa = CLIPIQA()
-            self.logger.info("img2score models loaded successfully")
-        except Exception as e:
-            self.logger.error(f"Error loading img2score models: {e}")
-            raise
-                
-        self.logger.info("AI Image Quality Detector initialized successfully")
+        # Initialize device for torch operations
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.logger.info(f"Using device: {self.device}")
+        
+        # Initialize image transform
+        self.transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: x.unsqueeze(0))  # Add batch dimension
+        ])
+        
+        self.logger.info("PIQ Image Quality Detector initialized successfully")
     
     def load_image(self, image_path_or_url):
         """Load an image from a file path or URL."""
@@ -81,7 +74,7 @@ class SimpleAIImageQualityDetector:
     
     def assess_image_quality(self, pil_image):
         """
-        Assess overall image quality using img2score.
+        Assess overall image quality using PIQ metrics.
         
         Args:
             pil_image: PIL Image object
@@ -90,25 +83,61 @@ class SimpleAIImageQualityDetector:
             Dictionary with quality scores and analysis
         """
         try:
-            # Calculate various quality scores
-            niqe_score = self.niqe(pil_image)
-            brisque_score = self.brisque(pil_image)
-            clipiqa_score = self.clipiqa(pil_image)
+            # Convert PIL image to tensor
+            tensor_image = self.transform(pil_image).to(self.device)
             
-            # NIQE: Lower is better (typically 0-100, with good images below 15)
-            # BRISQUE: Lower is better (typically 0-100, with good images below 30)
-            # CLIPIQA: Higher is better (typically 0-1)
+            with torch.no_grad():
+                # Calculate BRISQUE score (lower is better)
+                brisque_score = piq.brisque(tensor_image, data_range=1.0).item()
+                
+                # Calculate NIQE score (lower is better)
+                niqe_score = piq.niqe(tensor_image, data_range=1.0).item()
+                
+                # Calculate Total Variation (TV) score (lower is better for smoother images)
+                tv_score = piq.total_variation(tensor_image).item()
+                
+                # Calculate Content Score using VGG16 features
+                # This helps detect unnatural content that might look technically fine
+                try:
+                    content_score = piq.ContentScore()(torch.ones_like(tensor_image), tensor_image).item()
+                except Exception as content_err:
+                    self.logger.warning(f"Error calculating content score: {content_err}")
+                    content_score = 0.5  # Default value if calculation fails
             
-            # Normalize NIQE and BRISQUE to 0-1 range (inverted, so higher is better)
-            norm_niqe = max(0, min(1, 1 - (niqe_score / 50)))
-            norm_brisque = max(0, min(1, 1 - (brisque_score / 100)))
+            # Normalize scores to 0-1 range (higher is better)
+            # Typical ranges based on PIQ documentation and experiments
+            norm_brisque = max(0, min(1, 1 - (brisque_score / 100.0)))
+            norm_niqe = max(0, min(1, 1 - (niqe_score / 15.0)))
+            norm_tv = 0.5  # Default neutral value for TV
             
-            # Calculate weighted average (quality score)
-            weights = {'niqe': 0.3, 'brisque': 0.3, 'clipiqa': 0.4}
+            # For TV, extremely high and extremely low values are bad
+            # Very low TV: overly smooth, lacking detail
+            # Very high TV: too noisy or full of artifacts
+            if tv_score < 0.01:
+                norm_tv = 0.3  # Penalize overly smooth images
+            elif tv_score > 0.5:
+                norm_tv = 0.3  # Penalize overly noisy images
+            else:
+                # Scale to give highest scores to middle range
+                norm_tv = 1.0 - abs((tv_score - 0.1) / 0.1)
+                norm_tv = max(0.3, min(1.0, norm_tv))
+            
+            # Determine content score - higher is better
+            norm_content = max(0, min(1, content_score))
+            
+            # Calculate weighted average quality score
+            weights = {
+                'brisque': 0.35,
+                'niqe': 0.35, 
+                'tv': 0.15,
+                'content': 0.15
+            }
+            
             overall_quality = (
-                norm_niqe * weights['niqe'] + 
                 norm_brisque * weights['brisque'] + 
-                clipiqa_score * weights['clipiqa']
+                norm_niqe * weights['niqe'] + 
+                norm_tv * weights['tv'] +
+                norm_content * weights['content']
             )
             
             # Determine quality level
@@ -126,30 +155,39 @@ class SimpleAIImageQualityDetector:
             # Check for specific issues
             issues = []
             
-            # Check for blur
-            if norm_niqe < 0.4:
-                issues.append("Image appears blurry or has low detail")
-            
-            # Check for compression artifacts
+            # Check for blur/smoothness issues
             if norm_brisque < 0.4:
-                issues.append("Image likely contains compression artifacts")
+                issues.append("Image appears to have digital artifacts or unnatural patterns")
             
-            # Check for overall aesthetic quality
-            if clipiqa_score < 0.3:
-                issues.append("Image has poor aesthetic quality")
+            # Check for naturalness (NIQE)
+            if norm_niqe < 0.4:
+                issues.append("Image lacks natural image characteristics, appears artificially generated")
             
+            # Check for smoothness/noise issues
+            if norm_tv < 0.4:
+                if tv_score < 0.01:
+                    issues.append("Image appears overly smooth or lacks texture detail")
+                else:
+                    issues.append("Image contains excessive noise or artifacts")
+            
+            # Check content score
+            if norm_content < 0.3:
+                issues.append("Image content appears unnatural or distorted")
+                
             return {
                 "overall_quality_score": overall_quality,
                 "quality_level": quality_level,
                 "raw_scores": {
-                    "niqe": float(niqe_score),
                     "brisque": float(brisque_score),
-                    "clipiqa": float(clipiqa_score)
+                    "niqe": float(niqe_score),
+                    "total_variation": float(tv_score),
+                    "content": float(content_score)
                 },
                 "normalized_scores": {
-                    "niqe": float(norm_niqe),
                     "brisque": float(norm_brisque),
-                    "clipiqa": float(clipiqa_score)
+                    "niqe": float(norm_niqe),
+                    "total_variation": float(norm_tv),
+                    "content": float(norm_content)
                 },
                 "quality_issues": issues
             }
@@ -157,7 +195,7 @@ class SimpleAIImageQualityDetector:
             self.logger.error(f"Error in image quality assessment: {e}")
             return {
                 "error": f"Failed to assess image quality: {str(e)}",
-                "overall_quality_score": 0
+                "overall_quality_score": 0.5  # Neutral score on error
             }
     
     def analyze_hands(self, cv_image):
@@ -311,8 +349,6 @@ class SimpleAIImageQualityDetector:
                 "num_hands_detected": 0
             }
     
-    # Removed the analyze_with_gemini method
-    
     def _distance(self, point1, point2):
         """Calculate Euclidean distance between two points."""
         return np.sqrt((point1[0] - point2[0])**2 + (point1[1] - point2[1])**2)
@@ -356,7 +392,7 @@ class SimpleAIImageQualityDetector:
                 )
             
             # Determine if image is acceptable
-            is_acceptable = overall_score >= 0.7
+            is_acceptable = overall_score >= 0.6  # Lower threshold since PIQ metrics can be strict
             
             # Compile all issues
             all_issues = quality_results.get("quality_issues", []) + hand_results.get("hand_issues", [])
@@ -367,6 +403,18 @@ class SimpleAIImageQualityDetector:
                 "is_acceptable": is_acceptable,
                 "processing_time_seconds": time.time() - start_time,
                 "issues_summary": all_issues,
+                "metrics": {
+                    "brisque": quality_results.get("raw_scores", {}).get("brisque", 0),
+                    "niqe": quality_results.get("raw_scores", {}).get("niqe", 0),
+                    "total_variation": quality_results.get("raw_scores", {}).get("total_variation", 0),
+                    "content": quality_results.get("raw_scores", {}).get("content", 0),
+                },
+                "normalized_metrics": {
+                    "brisque": quality_results.get("normalized_scores", {}).get("brisque", 0),
+                    "niqe": quality_results.get("normalized_scores", {}).get("niqe", 0),
+                    "total_variation": quality_results.get("normalized_scores", {}).get("total_variation", 0),
+                    "content": quality_results.get("normalized_scores", {}).get("content", 0),
+                },
                 "detailed_results": {
                     "image_quality": quality_results,
                     "hand_analysis": hand_results
@@ -383,22 +431,18 @@ class SimpleAIImageQualityDetector:
             }
 
 
-# Missing import for regex
-import re
-
 # Example usage
 if __name__ == "__main__":
     import argparse
     
-    parser = argparse.ArgumentParser(description="AI Image Quality Detector")
+    parser = argparse.ArgumentParser(description="PIQ-based AI Image Quality Detector")
     parser.add_argument("--image", type=str, required=True, help="Path to image file or URL")
     parser.add_argument("--output", type=str, help="Optional path to save results as JSON")
-    parser.add_argument("--no-gemini", action="store_true", help="Disable Google Gemini analysis")
     
     args = parser.parse_args()
     
     # Initialize detector
-    detector = SimpleAIImageQualityDetector(use_gemini=not args.no_gemini)
+    detector = PIQImageQualityDetector()
     
     # Analyze image
     results = detector.analyze_image(args.image)
@@ -408,6 +452,12 @@ if __name__ == "__main__":
     print(f"Overall Score: {results['overall_score']:.2f}/1.00")
     print(f"Acceptable: {'Yes' if results['is_acceptable'] else 'No'}")
     print(f"Processing Time: {results['processing_time_seconds']:.2f} seconds")
+    
+    print("\nQuality Metrics:")
+    print(f"  BRISQUE: {results['metrics']['brisque']:.2f} (Normalized: {results['normalized_metrics']['brisque']:.2f})")
+    print(f"  NIQE: {results['metrics']['niqe']:.2f} (Normalized: {results['normalized_metrics']['niqe']:.2f})")
+    print(f"  Total Variation: {results['metrics']['total_variation']:.4f} (Normalized: {results['normalized_metrics']['total_variation']:.2f})")
+    print(f"  Content Score: {results['metrics']['content']:.2f} (Normalized: {results['normalized_metrics']['content']:.2f})")
     
     if results.get('issues_summary'):
         print("\nIssues Found:")
