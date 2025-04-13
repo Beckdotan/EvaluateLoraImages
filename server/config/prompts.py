@@ -252,7 +252,10 @@ class GeminiPrompts:
 
         ### Example Output:
         1. Eye Spacing Adjustment
-            Adjust facial landmark coordinates for eyes to match reference proportions
+            Adjust facial landmark coordinates so that the eyes will be closer to each other.
+
+        2. Nose Bridge Expansion
+            Increase the width of the nose bridge to make the nose wider.
 
         Focus on concrete, measurable changes that will bring the generated image closer to the reference images.
         """
