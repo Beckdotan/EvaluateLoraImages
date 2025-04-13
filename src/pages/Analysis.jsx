@@ -255,17 +255,17 @@ return (
                 {/* CLIP Score */}
                 <div className="metric-item">
                   <div className="metric-header">
-                    <span className="metric-name">CLIP Score:</span>
-                    {renderTooltip('CLIP', 'This score reflects how semantically similar the generated image is to the reference images, using CLIPs visual understanding. Higher scores (0-1) indicate the generated image closely matches the references in terms of content and structure.')}
+                    <span className="metric-name">Similarity Score:</span>
+                    {renderTooltip('CLIP', 'CLIP SCORE: This score reflects how semantically similar the generated image is to the reference images, using CLIPs visual understanding. Higher scores (0-1) indicate the generated image closely matches the references in terms of content and structure.')}
                   </div>
                   <span className="metric-value">{analysisResults.clip_score.toFixed(3)}</span>
-                  <div className="metric-weight"><small>Weight: 50%</small></div>
+                  <div className="metric-weight"><small>Weight: 70%</small></div>
                 </div>
 
                 {/* BRISQUE Score */}
                 <div className="metric-item">
                   <div className="metric-header">
-                    <span className="metric-name">BRISQUE:</span>
+                    <span className="metric-name">Image Quality:</span>
                     {renderTooltip('brisque', 'BRISQUE measures spatial distortion like blur or unnatural patterns. Lower raw scores (0–100) are better.')}
                   </div>
                   <span className="metric-value">
@@ -274,7 +274,7 @@ return (
                   <div className="metric-weight">
                     <small>
                       Weight: {
-                        analysisResults.quality_analysis.hand_analysis?.num_hands_detected > 0 ? '35%' : '50%'
+                        analysisResults.quality_analysis.hand_analysis?.num_hands_detected > 0 ? '15%' : '30%'
                       }
                     </small>
                   </div>

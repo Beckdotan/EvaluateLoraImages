@@ -14,7 +14,6 @@ import shutil
 from utils.image_processing import process_uploaded_image
 from services.face_detection import FaceDetector
 from services.background_removal import BackgroundRemover
-from services.visual_analysis import VisualAnalysisService
 from services.gemini_visual_analysis import GeminiVisualAnalysisService
 from services.piq_image_quality_detector import PIQImageQualityDetector
 from services.CLIPSimilarityService import CLIPSimilarityService
@@ -50,12 +49,6 @@ app.add_middleware(
 # Initialize services
 face_detector = FaceDetector(min_detection_confidence=0.7)
 background_remover = BackgroundRemover(foreground_rect_scale=0.95)
-try:
-    visual_analysis_service = VisualAnalysisService()
-except Exception as e:
-    logging.error(f"CRITICAL: Failed to initialize VisualAnalysisService: {e}")
-    visual_analysis_service = None # Or raise the exception
-    
 # Initialize the Gemini Visual Analysis service
 try:
     gemini_analysis_service = GeminiVisualAnalysisService()

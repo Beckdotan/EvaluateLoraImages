@@ -385,12 +385,12 @@ class PIQImageQualityDetector:
             else:
                 # Hands detected, use weighted average
                 overall_score = (
-                    quality_results.get("overall_quality_score", 0) * 0.7 +
-                    hand_results.get("hand_score", 0.8) * 0.3
+                    quality_results.get("overall_quality_score", 0) * 0.5 +
+                    hand_results.get("hand_score", 0.8) * 0.5
                 )
 
             # Determine if image is acceptable
-            is_acceptable = overall_score >= 0.6  # Lower threshold since PIQ metrics can be strict
+            is_acceptable = overall_score >= 0.8  # Lower threshold since PIQ metrics can be strict
 
             # Compile all issues
             all_issues = quality_results.get("quality_issues", []) + hand_results.get("hand_issues", [])
