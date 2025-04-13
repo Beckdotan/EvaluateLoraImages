@@ -201,3 +201,316 @@
     max-width: 600px;
     margin: 0 auto;
   }
+
+ /* Quality Analysis Section - Dark Theme */
+.quality-analysis {
+  border: 1px solid #555;
+  border-radius: 8px;
+  background-color: #4b4b4b;
+  margin-bottom: 30px;
+  padding: 20px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.quality-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+  margin-bottom: 20px;
+}
+
+.quality-score-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+
+.quality-score-container h3 {
+  color: lightgray;
+  margin-bottom: 5px;
+}
+
+.quality-score {
+  font-size: 24px;
+  font-weight: bold;
+  padding: 4px 12px;
+  border-radius: 20px;
+  margin-left: 10px;
+}
+
+.score-high {
+  background-color: #2a5f2a;
+  color: #9bff9b;
+}
+
+.score-medium {
+  background-color: #5e4f00;
+  color: #ffe564;
+}
+
+.score-low {
+  background-color: #5e1c1c;
+  color: #ff9e9e;
+}
+
+.quality-status {
+  margin-top: 5px;
+  font-size: 16px;
+  color: lightgray;
+}
+
+.acceptable {
+  color: #9bff9b;
+  font-weight: bold;
+}
+
+.needs-improvement {
+  color: #ff9e9e;
+  font-weight: bold;
+}
+
+.quality-issues {
+  background-color: rgba(94, 79, 0, 0.3);
+  border-left: 4px solid #ffe564;
+  padding: 15px;
+  border-radius: 0 4px 4px 0;
+}
+
+.quality-issues h4 {
+  margin-top: 0;
+  color: #ffe564;
+}
+
+.quality-issues ul {
+  margin: 10px 0 0 0;
+  padding-left: 20px;
+  color: lightgray;
+}
+
+.quality-issues li {
+  margin-bottom: 5px;
+}
+
+.quality-metrics {
+  margin-top: 20px;
+}
+
+.quality-metrics h4 {
+  margin-bottom: 15px;
+  border-bottom: 1px solid #666;
+  padding-bottom: 5px;
+  color: lightgray;
+}
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+  gap: 15px;
+}
+
+.metric-item {
+  display: flex;
+  flex-direction: column;
+  background-color: #5a5a5a;
+  padding: 10px;
+  border-radius: 6px;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
+}
+
+.metric-name {
+  font-weight: 600;
+  color: #ccc;
+  margin-bottom: 5px;
+}
+
+.metric-value {
+  font-family: monospace;
+  font-size: 16px;
+  color: #88a7fd;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .quality-summary {
+    flex-direction: column;
+  }
+  
+  .metrics-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Tooltip Styling - Dark Theme */
+.tooltip-container {
+  position: relative;
+  display: inline-block;
+  margin-left: 8px;
+}
+
+.info-icon-button {
+  background: none;
+  border: none;
+  cursor: pointer;
+  padding: 0;
+  color: #a0a0a0;
+  display: flex;
+  align-items: center;
+  transition: color 0.2s;
+}
+
+.info-icon-button:hover {
+  color: #88a7fd;
+}
+
+.tooltip-content {
+  position: absolute;
+  width: 280px;
+  background-color: #333333;
+  border: 1px solid #555;
+  border-radius: 4px;
+  padding: 12px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.3);
+  z-index: 100;
+  top: 100%;
+  left: -10px;
+  margin-top: 5px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: #ccc;
+}
+
+.tooltip-content p {
+  margin: 0 0 10px 0;
+}
+
+.tooltip-close {
+  background: #4a4a4a;
+  border: 1px solid #666;
+  border-radius: 4px;
+  padding: 4px 8px;
+  font-size: 12px;
+  cursor: pointer;
+  color: #ccc;
+  float: right;
+}
+
+.tooltip-close:hover {
+  background: #555;
+}
+
+/* Enhanced Metric Styling - Dark Theme */
+.metric-item {
+  border: 1px solid #555;
+  border-radius: 6px;
+  padding: 12px;
+  background-color: #5a5a5a;
+  margin-bottom: 12px;
+}
+
+.metric-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 5px;
+}
+
+.metric-name {
+  font-weight: 600;
+  flex-grow: 1;
+  color: #ccc;
+}
+
+.metric-value {
+  font-size: 18px;
+  font-weight: 500;
+  color: #88a7fd;
+  display: block;
+  margin: 5px 0;
+}
+
+.metric-weight {
+  color: #a0a0a0;
+  font-size: 12px;
+}
+
+/* Hand Analysis Section - Dark Theme */
+.hand-analysis {
+  margin-top: 20px;
+  border: 1px solid #555;
+  border-radius: 8px;
+  background-color: #4b4b4b;
+}
+
+.hand-score-header {
+  display: flex;
+  align-items: center;
+  margin-bottom: 15px;
+}
+
+.hand-score-header h3 {
+  color: lightgray;
+  margin-bottom: 0;
+}
+
+.hand-details {
+  background-color: #5a5a5a;
+  border-radius: 6px;
+  padding: 15px;
+}
+
+.hand-issues {
+  margin-top: 10px;
+  background-color: rgba(94, 79, 0, 0.3);
+  border-left: 4px solid #ffe564;
+  padding: 15px;
+  border-radius: 0 4px 4px 0;
+}
+
+.hand-issues h4 {
+  margin-top: 0;
+  color: #ffe564;
+}
+
+.hand-issues ul {
+  margin: 10px 0 0 0;
+  padding-left: 20px;
+  color: lightgray;
+}
+
+.hand-issues li {
+  margin-bottom: 5px;
+}
+
+.hand-score-note {
+  margin-top: 15px;
+  color: #a0a0a0;
+  border-top: 1px solid #666;
+  padding-top: 10px;
+  font-size: 13px;
+}
+
+.acceptability-threshold {
+  color: #a0a0a0;
+  font-size: 13px;
+  margin-top: 5px;
+}
+
+/* Updated Quality Score Colors to match your theme */
+.quality-score {
+  font-size: 24px;
+  font-weight: bold;
+  padding: 4px 12px;
+  border-radius: 20px;
+  margin-left: 10px;
+}
+
+/* Responsive adjustments */
+@media (max-width: 768px) {
+  .metrics-grid {
+    display: block;
+  }
+  
+  .tooltip-content {
+    width: 240px;
+    left: -100px;
+  }
+}

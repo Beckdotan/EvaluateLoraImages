@@ -264,9 +264,10 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
         if not generated_id or not isinstance(generated_id, str):
             logging.warning("Validation failed: Missing or invalid generated_id")
             raise HTTPException(status_code=400, detail={"message": "A valid generated_id (string filename) is required"})
-        logging.info(f"Extracted Reference IDs: {reference_ids}, Generated ID: {generated_id}")
+        #logging.info(f"Extracted Reference IDs: {reference_ids}, Generated ID: {generated_id}")
 
         # --- Get Full Image Paths for Analysis ---
+        # For background-removed images (for body analysis)
         reference_image_paths: List[str] = []
         for ref_id in reference_ids:
             # Basic security: prevent path traversal, use only filename part
@@ -282,7 +283,7 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
                 raise HTTPException(status_code=404, detail=f"Reference image not found on server: {filename}")
             reference_image_paths.append(path)
 
-        # Construct and validate generated image path
+        # Construct and validate generated image path (no background)
         generated_filename = os.path.basename(generated_id)
         if not generated_filename: # Handle empty string case
             logging.warning(f"Invalid empty generated ID provided.")
@@ -294,13 +295,39 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
             logging.error(f"Generated image file not found or is not a file: {generated_image_path} (from ID: {generated_id})")
             raise HTTPException(status_code=404, detail=f"Generated image not found on server: {generated_filename}")
 
-        logging.info(f"Constructed reference paths: {reference_image_paths}")
-        logging.info(f"Constructed generated path: {generated_image_path}")
+        #logging.info(f"Constructed reference paths: {reference_image_paths}")
+        #logging.info(f"Constructed generated path: {generated_image_path}")
 
-        # --- NEW: Perform Image Quality Analysis using PIQ ---
-        logging.info("Starting image quality analysis using PIQ metrics...")
+        # --- Get the full image (with background) for quality analysis ---
+        # Find the corresponding thumbnail which has the full image with background
+        thumbnail_prefix = "thumb_generated_"
+        thumbnail_suffix = generated_filename.replace("generated_", "")
+        thumbnail_path = None
+        
+        # Look for the matching thumbnail in the THUMBNAILS_DIR
+        if os.path.exists(THUMBNAILS_DIR):
+            thumbnail_files = [f for f in os.listdir(THUMBNAILS_DIR) if f.startswith(thumbnail_prefix)]
+            for thumb_file in thumbnail_files:
+                if thumbnail_suffix in thumb_file:
+                    thumbnail_path = os.path.join(THUMBNAILS_DIR, thumb_file)
+                    break
+        
+        # If we can't find the exact match, try to find any thumbnail that starts with "thumb_generated_"
+        if not thumbnail_path and thumbnail_files:
+            thumbnail_path = os.path.join(THUMBNAILS_DIR, thumbnail_files[0])
+            logging.warning(f"Exact thumbnail match not found, using: {thumbnail_path}")
+        
+        # If no thumbnails at all, fall back to the no-bg image
+        if not thumbnail_path:
+            logging.warning(f"No thumbnails found for quality analysis, falling back to no-bg image: {generated_image_path}")
+            thumbnail_path = generated_image_path
+        else:
+            logging.info(f"Using thumbnail for quality analysis: {thumbnail_path}")
+
+        # --- Perform Image Quality Analysis using PIQ on the full image ---
+        logging.info("Starting image quality analysis using PIQ metrics on full image...")
         try:
-            quality_analysis = image_quality_detector.analyze_image(generated_image_path)
+            quality_analysis = image_quality_detector.analyze_image(thumbnail_path)
             
             quality_score = quality_analysis.get("overall_score", 0)
             is_acceptable = quality_analysis.get("is_acceptable", False)
@@ -445,6 +472,7 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
             status_code=500,
             detail={"message": "An unexpected server error occurred during analysis."}
         )
+
 
 if __name__ == '__main__':
     uvicorn.run(app, host='0.0.0.0', port=8000)

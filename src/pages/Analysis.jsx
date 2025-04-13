@@ -3,6 +3,9 @@ import { useLocation, Link } from 'react-router-dom';
 import ReactMarkdown from 'react-markdown';
 import './Analysis.css';
 
+// Import an info icon from a common icon library (assuming you have lucide-react installed)
+import { Info } from 'lucide-react';
+
 function Analysis() {
   const location = useLocation();
   const { referenceImages, generatedImage, results } = location.state || {};
@@ -10,6 +13,7 @@ function Analysis() {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState(null);
   const [analysisResults, setAnalysisResults] = useState(null);
+  const [activeTooltip, setActiveTooltip] = useState(null);
   
   // Basic validation
   if (!referenceImages || !generatedImage || !results) {
@@ -67,35 +71,90 @@ function Analysis() {
       const data = await response.json();
       setAnalysisResults(data);
     } catch (err) {
-        console.error('Analysis error:', err);
-        let errorDetails = err.message || 'An error occurred during analysis';
+      console.error('Analysis error:', err);
+      let errorDetails = err.message || 'An error occurred during analysis';
       
-        // Try to get more details from the response if it exists and is not ok
-        if (response && !response.ok) {
+      // Try to get more details from the response if it exists and is not ok
+      if (response && !response.ok) {
+        try {
+          // Attempt to read the response body as text
+          const errorText = await response.text();
+          console.error('Server response text:', errorText); 
+          // Try parsing again IF it looks like JSON, otherwise use text
           try {
-            // Attempt to read the response body as text
-            const errorText = await response.text();
-            console.error('Server response text:', errorText); 
-            // Try parsing again IF it looks like JSON, otherwise use text
-            try {
-                const errorJson = JSON.parse(errorText);
-                errorDetails = errorJson.detail || errorJson.message || errorText;
-            } catch (parseError) {
-                // If parsing fails, use the raw text (might be HTML)
-                errorDetails = `Server returned status ${response.status}: ${errorText.substring(0, 200)}...`; 
-            }
-          } catch (textError) {
-            console.error('Could not read error response text:', textError);
-            errorDetails = `Failed to analyze images. Server returned status ${response?.status || 'unknown'}. Unable to read error details.`;
+            const errorJson = JSON.parse(errorText);
+            errorDetails = errorJson.detail || errorJson.message || errorText;
+          } catch (parseError) {
+            // If parsing fails, use the raw text (might be HTML)
+            errorDetails = `Server returned status ${response.status}: ${errorText.substring(0, 200)}...`; 
           }
-        } else if (!response) {
-            errorDetails = 'Network error or failed to fetch from the server.';
+        } catch (textError) {
+          console.error('Could not read error response text:', textError);
+          errorDetails = `Failed to analyze images. Server returned status ${response?.status || 'unknown'}. Unable to read error details.`;
         }
-        
-        setError(errorDetails); 
-      } finally {
-        setIsLoading(false);
+      } else if (!response) {
+        errorDetails = 'Network error or failed to fetch from the server.';
       }
+        
+      setError(errorDetails); 
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  // Function to render quality score with a color indicator
+  const renderQualityScore = (score) => {
+    let colorClass = 'score-medium';
+    if (score >= 0.7) colorClass = 'score-high';
+    if (score < 0.4) colorClass = 'score-low';
+    
+    return (
+      <span className={`quality-score ${colorClass}`}>
+        {(score * 100).toFixed(1)}%
+      </span>
+    );
+  };
+  
+  // Tooltip descriptions
+  const tooltips = {
+    brisque: "Blind/Referenceless Image Spatial Quality Evaluator - Measures how natural an image looks without needing a reference image. Detects blur, compression artifacts, noise, and unnatural patterns. Lower raw scores indicate better quality.",
+    niqe: "Natural Image Quality Evaluator - Evaluates how closely an image matches natural image statistics. Great for detecting AI-generated content that lacks natural characteristics. Lower raw scores indicate better quality.",
+    totalVariation: "Measures pixel-to-pixel changes across the image. Too low: overly smooth, lacks texture (bad). Too high: excessive noise or artifacts (bad). Middle values are best (natural textures).",
+    contentScore: "Uses VGG16 neural network features to detect unnatural content arrangements. Helps identify content that might look technically fine but is semantically abnormal. Higher values indicate more natural content structure.",
+    handScore: "Analyzes hand anatomy using MediaPipe. The score starts at perfect 1.0 and decreases based on detected issues: +0.2 penalty for each abnormally long/short finger, +0.15 penalty for unusual finger proportions, +0.3 penalty for merged or extra fingers. No hands detected = perfect score (no penalty)."
+  };
+  
+  // Function to render tooltip
+  const renderTooltip = (id, content) => {
+    return (
+      <div className="tooltip-container">
+        <button 
+          className="info-icon-button" 
+          onClick={(e) => {
+            e.preventDefault();
+            setActiveTooltip(activeTooltip === id ? null : id);
+          }}
+          aria-label="Show information"
+        >
+          <Info size={16} />
+        </button>
+        
+        {activeTooltip === id && (
+          <div className="tooltip-content">
+            <p>{content}</p>
+            <button 
+              className="tooltip-close" 
+              onClick={(e) => {
+                e.preventDefault();
+                setActiveTooltip(null);
+              }}
+            >
+              Close
+            </button>
+          </div>
+        )}
+      </div>
+    );
   };
   
   return (
@@ -142,13 +201,114 @@ function Analysis() {
       
       {analysisResults && (
         <div className="analysis-results">
-
+          {/* Image Quality Analysis Section */}
+          <div className="analysis-section quality-analysis">
+            <h2>Image Quality Analysis</h2>
+            <div className="analysis-content">
+              <div className="quality-summary">
+                <div className="quality-score-container">
+                  <h3>Overall Quality: {renderQualityScore(analysisResults.quality_analysis.score)}</h3>
+                  <p className="quality-status">
+                    Status: <span className={analysisResults.quality_analysis.is_acceptable ? 'acceptable' : 'needs-improvement'}>
+                      {analysisResults.quality_analysis.is_acceptable ? 'Acceptable' : 'Needs Improvement'}
+                    </span>
+                  </p>
+                  <p className="acceptability-threshold">
+                    <small>Images with a score of 60% or higher are considered acceptable</small>
+                  </p>
+                </div>
+                
+                {analysisResults.quality_analysis.issues && analysisResults.quality_analysis.issues.length > 0 && (
+                  <div className="quality-issues">
+                    <h4>Detected Issues:</h4>
+                    <ul>
+                      {analysisResults.quality_analysis.issues.map((issue, index) => (
+                        <li key={index}>{issue}</li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+              
+              {/* Technical Metrics Section with Info Icons */}
+              <div className="quality-metrics">
+                <h4>Technical Metrics:</h4>
+                <div className="metrics-grid">
+                  {/* BRISQUE */}
+                  <div className="metric-item">
+                    <div className="metric-header">
+                      <span className="metric-name">BRISQUE:</span>
+                      {renderTooltip('brisque', tooltips.brisque)}
+                    </div>
+                    <span className="metric-value">
+                      {typeof analysisResults.quality_analysis.normalized_metrics.brisque === 'number' 
+                        ? analysisResults.quality_analysis.normalized_metrics.brisque.toFixed(3) + '%'
+                        : analysisResults.quality_analysis.normalized_metrics.brisque || 'N/A'}
+                    </span>
+                    <div className="metric-weight">
+                      <small>Weight: 35%</small>
+                    </div>
+                  </div>
+                  
+                  {/* NIQE */}
+                  <div className="metric-item">
+                    <div className="metric-header">
+                      <span className="metric-name">NIQE:</span>
+                      {renderTooltip('niqe', tooltips.niqe)}
+                    </div>
+                    <span className="metric-value">
+                      {typeof analysisResults.quality_analysis.normalized_metrics.niqe === 'number' 
+                        ? analysisResults.quality_analysis.normalized_metrics.niqe.toFixed(3) + '%'
+                        : analysisResults.quality_analysis.normalized_metrics.niqe || 'N/A'}
+                    </span>
+                    <div className="metric-weight">
+                      <small>Weight: 35%</small>
+                    </div>
+                  </div>
+                  
+                  {/* Total Variation */}
+                  <div className="metric-item">
+                    <div className="metric-header">
+                      <span className="metric-name">Total Variation:</span>
+                      {renderTooltip('totalVariation', tooltips.totalVariation)}
+                    </div>
+                    <span className="metric-value">
+                      {typeof analysisResults.quality_analysis.normalized_metrics.total_variation === 'number' 
+                        ? analysisResults.quality_analysis.normalized_metrics.total_variation.toFixed(3) + '%'
+                        : analysisResults.quality_analysis.normalized_metrics.total_variation || 'N/A'}
+                    </span>
+                    <div className="metric-weight">
+                      <small>Weight: 15%</small>
+                    </div>
+                  </div>
+                  
+                  {/* Content Score */}
+                  <div className="metric-item">
+                    <div className="metric-header">
+                      <span className="metric-name">Content Score:</span>
+                      {renderTooltip('contentScore', tooltips.contentScore)}
+                    </div>
+                    <span className="metric-value">
+                      {typeof analysisResults.quality_analysis.normalized_metrics.content === 'number' 
+                        ? analysisResults.quality_analysis.normalized_metrics.content.toFixed(3) + '%' 
+                        : analysisResults.quality_analysis.normalized_metrics.content || 'N/A'}
+                    </span>
+                    <div className="metric-weight">
+                      <small>Weight: 15%</small>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          
           <div className="analysis-section">
             <h2>Improvement Suggestions</h2>
             <div className="analysis-content markdown-content">
               <ReactMarkdown>{analysisResults.improvement_suggestions}</ReactMarkdown>
             </div>
           </div>
+          
           <div className="analysis-section">
             <h2>Facial Features Analysis</h2>
             <div className="analysis-content markdown-content">
