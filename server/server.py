@@ -464,10 +464,10 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
             "face_analysis": face_analysis,
             "body_analysis": body_analysis,
             "clip_score": clip_score,
-            "overall_score": (clip_score + quality_score) / 2,
+            "overall_score": 0.7* clip_score + 0.3*quality_score,
             "quality_analysis": {
                 "score": quality_score,
-                "is_acceptable": is_acceptable,
+                "is_acceptable": 0.7* clip_score + 0.3*quality_score > 0.75,
                 "quality_level": quality_level,
                 "issues": quality_issues,
                 "metrics": quality_metrics,

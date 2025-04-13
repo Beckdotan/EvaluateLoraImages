@@ -233,7 +233,7 @@ return (
                   </span>
                 </p>
                 <p className="acceptability-threshold">
-                  <small>Images with a score of 60% or higher are considered acceptable</small>
+                  <small>Images with a score of 75% or higher are considered acceptable</small>
                 </p>
               </div>
 
@@ -258,7 +258,7 @@ return (
                     <span className="metric-name">Similarity Score:</span>
                     {renderTooltip('CLIP', 'CLIP SCORE: This score reflects how semantically similar the generated image is to the reference images, using CLIPs visual understanding. Higher scores (0-1) indicate the generated image closely matches the references in terms of content and structure.')}
                   </div>
-                  <span className="metric-value">{analysisResults.clip_score.toFixed(3)}</span>
+                  <span className="metric-value">{analysisResults.clip_score.toFixed(3)*100 + "%"}</span>
                   <div className="metric-weight"><small>Weight: 70%</small></div>
                 </div>
 
@@ -269,7 +269,7 @@ return (
                     {renderTooltip('brisque', 'BRISQUE measures spatial distortion like blur or unnatural patterns. Lower raw scores (0–100) are better.')}
                   </div>
                   <span className="metric-value">
-                    {analysisResults.quality_analysis.normalized_metrics?.brisque?.toFixed(3)}
+                    {analysisResults.quality_analysis.normalized_metrics?.brisque?.toFixed(3)*100 + "%"}
                   </span>
                   <div className="metric-weight">
                     <small>
@@ -288,7 +288,7 @@ return (
                       {renderTooltip('handScore', 'Assesses hand realism. 1.0 is perfect. Deductions are made for abnormalities like merged fingers or unrealistic proportions.')}
                     </div>
                     <span className="metric-value">
-                      {analysisResults.quality_analysis.hand_analysis.hand_score.toFixed(3)}
+                      {analysisResults.quality_analysis.hand_analysis.hand_score.toFixed(3)*100 + "%"}
                     </span>
                     <div className="metric-weight"><small>Weight: 15%</small></div>
                   </div>
