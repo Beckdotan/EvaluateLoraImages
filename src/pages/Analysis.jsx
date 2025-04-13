@@ -125,214 +125,214 @@ function Analysis() {
   };
   
   // Function to render tooltip
-  const renderTooltip = (id, content) => {
-    return (
-      <div className="tooltip-container">
-        <button 
-          className="info-icon-button" 
-          onClick={(e) => {
-            e.preventDefault();
-            setActiveTooltip(activeTooltip === id ? null : id);
-          }}
-          aria-label="Show information"
-        >
-          <Info size={16} />
-        </button>
-        
-        {activeTooltip === id && (
-          <div className="tooltip-content">
-            <p>{content}</p>
-            <button 
-              className="tooltip-close" 
-              onClick={(e) => {
-                e.preventDefault();
-                setActiveTooltip(null);
-              }}
-            >
-              Close
-            </button>
-          </div>
-        )}
-      </div>
-    );
+const renderTooltip = (id, content) => {
+  return (
+    <div className="tooltip-container">
+      <button 
+        className="info-icon-button" 
+        onClick={(e) => {
+          e.preventDefault();
+          setActiveTooltip(activeTooltip === id ? null : id);
+        }}
+        aria-label="Show information"
+      >
+        <Info size={16} />
+      </button>
+      
+      {activeTooltip === id && (
+        <div className="tooltip-content">
+          <p>{content}</p>
+          <button 
+            className="tooltip-close" 
+            onClick={(e) => {
+              e.preventDefault();
+              setActiveTooltip(null);
+            }}
+          >
+            Close
+          </button>
+        </div>
+      )}
+    </div>
+  );
+};
+
+// Helper function to get metric weight display
+const getMetricWeight = (metricName) => {
+  const weights = {
+    'brisque': '35%',
+    'total_variation': '30%',
+    'clip_iqa': '40%'
   };
   
-  return (
-    <div className="analysis-container">
-      <h1>Image Analysis Results</h1>
-      
-      <div className="images-summary">
-        <div className="reference-summary">
-          <h3>Reference Images</h3>
-          <div className="thumbnail-grid">
-            {referenceResults.map((result, index) => (
-              <div key={`ref-${index}`} className="thumbnail">
-                <img src={result.thumbnail_base64} alt={`Reference ${index + 1}`} />
-              </div>
-            ))}
-          </div>
-        </div>
-        
-        <div className="generated-summary">
-          <h3>Generated Image</h3>
-          <div className="thumbnail-grid">
-            <div className="thumbnail">
-              <img src={generatedResult.thumbnail_base64} alt="Generated" />
+  return weights[metricName] || 'N/A';
+};
+
+
+
+return (
+  <div className="analysis-container">
+    <h1>Image Analysis Results</h1>
+
+    <div className="images-summary">
+      <div className="reference-summary">
+        <h3>Reference Images</h3>
+        <div className="thumbnail-grid">
+          {referenceResults.map((result, index) => (
+            <div key={`ref-${index}`} className="thumbnail">
+              <img src={result.thumbnail_base64} alt={`Reference ${index + 1}`} />
             </div>
+          ))}
+        </div>
+      </div>
+
+      <div className="generated-summary">
+        <h3>Generated Image</h3>
+        <div className="thumbnail-grid">
+          <div className="thumbnail">
+            <img src={generatedResult.thumbnail_base64} alt="Generated" />
           </div>
         </div>
       </div>
-      
-      {isLoading && (
-        <div className="loading-container">
-          <div className="loading-spinner"></div>
-          <p>Analyzing images with Gemini...</p>
-          <p className="loading-note">This may take a moment as we perform detailed visual analysis</p>
-        </div>
-      )}
-      
-      {error && (
-        <div className="error-message">
-          <h3>Analysis Error</h3>
-          <p>{error}</p>
-          <button className="btn" onClick={performAnalysis}>Retry Analysis</button>
-        </div>
-      )}
-      
-      {analysisResults && (
-        <div className="analysis-results">
-          {/* Image Quality Analysis Section */}
-          <div className="analysis-section quality-analysis">
-            <h2>Image Quality Analysis</h2>
-            <div className="analysis-content">
-              <div className="quality-summary">
-                <div className="quality-score-container">
-                  <h3>Overall Quality: {renderQualityScore(analysisResults.quality_analysis.score)}</h3>
-                  <p className="quality-status">
-                    Status: <span className={analysisResults.quality_analysis.is_acceptable ? 'acceptable' : 'needs-improvement'}>
-                      {analysisResults.quality_analysis.is_acceptable ? 'Acceptable' : 'Needs Improvement'}
-                    </span>
-                  </p>
-                  <p className="acceptability-threshold">
-                    <small>Images with a score of 60% or higher are considered acceptable</small>
-                  </p>
+    </div>
+
+    {isLoading && (
+      <div className="loading-container">
+        <div className="loading-spinner"></div>
+        <p>Analyzing images with Gemini...</p>
+        <p className="loading-note">This may take a moment as we perform detailed visual analysis</p>
+      </div>
+    )}
+
+    {error && (
+      <div className="error-message">
+        <h3>Analysis Error</h3>
+        <p>{error}</p>
+        <button className="btn" onClick={performAnalysis}>Retry Analysis</button>
+      </div>
+    )}
+
+    {analysisResults && (
+      <div className="analysis-results">
+        {/* Overall Score Section */}
+        <div className="analysis-section overall-score">
+          <h2>Overall Score</h2>
+          <div className="analysis-content">
+            <div className="quality-summary">
+              <div className="quality-score-container">
+                <h3>Overall Score: {renderQualityScore(analysisResults.overall_score)}</h3>
+                <p className="quality-status">
+                  Status: <span className={analysisResults.quality_analysis.is_acceptable ? 'acceptable' : 'needs-improvement'}>
+                    {analysisResults.quality_analysis.is_acceptable ? 'Acceptable' : 'Needs Improvement'}
+                  </span>
+                </p>
+                <p className="quality-level">
+                  Quality Level: <span className={`level-${analysisResults.quality_analysis.quality_level}`}>
+                    {analysisResults.quality_analysis.quality_level.charAt(0).toUpperCase() +
+                      analysisResults.quality_analysis.quality_level.slice(1)}
+                  </span>
+                </p>
+                <p className="acceptability-threshold">
+                  <small>Images with a score of 60% or higher are considered acceptable</small>
+                </p>
+              </div>
+
+              {analysisResults.quality_analysis.issues?.length > 0 && (
+                <div className="quality-issues">
+                  <h4>Detected Issues:</h4>
+                  <ul>
+                    {analysisResults.quality_analysis.issues.map((issue, index) => (
+                      <li key={index}>{issue}</li>
+                    ))}
+                  </ul>
                 </div>
-                
-                {analysisResults.quality_analysis.issues && analysisResults.quality_analysis.issues.length > 0 && (
-                  <div className="quality-issues">
-                    <h4>Detected Issues:</h4>
-                    <ul>
-                      {analysisResults.quality_analysis.issues.map((issue, index) => (
-                        <li key={index}>{issue}</li>
-                      ))}
-                    </ul>
+              )}
+            </div>
+
+            <div className="quality-metrics">
+              <h4>Contributing Metrics:</h4>
+              <div className="metrics-grid">
+                {/* CLIP Score */}
+                <div className="metric-item">
+                  <div className="metric-header">
+                    <span className="metric-name">CLIP Score:</span>
+                    {renderTooltip('CLIP', 'This score reflects how semantically similar the generated image is to the reference images, using CLIPs visual understanding. Higher scores (0-1) indicate the generated image closely matches the references in terms of content and structure.')}
+                  </div>
+                  <span className="metric-value">{analysisResults.clip_score.toFixed(3)}</span>
+                  <div className="metric-weight"><small>Weight: 50%</small></div>
+                </div>
+
+                {/* BRISQUE Score */}
+                <div className="metric-item">
+                  <div className="metric-header">
+                    <span className="metric-name">BRISQUE:</span>
+                    {renderTooltip('brisque', 'BRISQUE measures spatial distortion like blur or unnatural patterns. Lower raw scores (0–100) are better.')}
+                  </div>
+                  <span className="metric-value">
+                    {analysisResults.quality_analysis.normalized_metrics?.brisque?.toFixed(3)}
+                  </span>
+                  <div className="metric-weight">
+                    <small>
+                      Weight: {
+                        analysisResults.quality_analysis.hand_analysis?.num_hands_detected > 0 ? '35%' : '50%'
+                      }
+                    </small>
+                  </div>
+                </div>
+
+                {/* Hand Score – Only if hands exist */}
+                {analysisResults.quality_analysis.hand_analysis?.num_hands_detected > 0 && (
+                  <div className="metric-item">
+                    <div className="metric-header">
+                      <span className="metric-name">Hand Score:</span>
+                      {renderTooltip('handScore', 'Assesses hand realism. 1.0 is perfect. Deductions are made for abnormalities like merged fingers or unrealistic proportions.')}
+                    </div>
+                    <span className="metric-value">
+                      {analysisResults.quality_analysis.hand_analysis.hand_score.toFixed(3)}
+                    </span>
+                    <div className="metric-weight"><small>Weight: 15%</small></div>
                   </div>
                 )}
               </div>
-              
-              {/* Technical Metrics Section with Info Icons */}
-              <div className="quality-metrics">
-                <h4>Technical Metrics:</h4>
-                <div className="metrics-grid">
-                  {/* BRISQUE */}
-                  <div className="metric-item">
-                    <div className="metric-header">
-                      <span className="metric-name">BRISQUE:</span>
-                      {renderTooltip('brisque', tooltips.brisque)}
-                    </div>
-                    <span className="metric-value">
-                      {typeof analysisResults.quality_analysis.normalized_metrics.brisque === 'number' 
-                        ? analysisResults.quality_analysis.normalized_metrics.brisque.toFixed(3) + '%'
-                        : analysisResults.quality_analysis.normalized_metrics.brisque || 'N/A'}
-                    </span>
-                    <div className="metric-weight">
-                      <small>Weight: 35%</small>
-                    </div>
-                  </div>
-                  
-                  {/* NIQE */}
-                  <div className="metric-item">
-                    <div className="metric-header">
-                      <span className="metric-name">NIQE:</span>
-                      {renderTooltip('niqe', tooltips.niqe)}
-                    </div>
-                    <span className="metric-value">
-                      {typeof analysisResults.quality_analysis.normalized_metrics.niqe === 'number' 
-                        ? analysisResults.quality_analysis.normalized_metrics.niqe.toFixed(3) + '%'
-                        : analysisResults.quality_analysis.normalized_metrics.niqe || 'N/A'}
-                    </span>
-                    <div className="metric-weight">
-                      <small>Weight: 35%</small>
-                    </div>
-                  </div>
-                  
-                  {/* Total Variation */}
-                  <div className="metric-item">
-                    <div className="metric-header">
-                      <span className="metric-name">Total Variation:</span>
-                      {renderTooltip('totalVariation', tooltips.totalVariation)}
-                    </div>
-                    <span className="metric-value">
-                      {typeof analysisResults.quality_analysis.normalized_metrics.total_variation === 'number' 
-                        ? analysisResults.quality_analysis.normalized_metrics.total_variation.toFixed(3) + '%'
-                        : analysisResults.quality_analysis.normalized_metrics.total_variation || 'N/A'}
-                    </span>
-                    <div className="metric-weight">
-                      <small>Weight: 15%</small>
-                    </div>
-                  </div>
-                  
-                  {/* Content Score */}
-                  <div className="metric-item">
-                    <div className="metric-header">
-                      <span className="metric-name">Content Score:</span>
-                      {renderTooltip('contentScore', tooltips.contentScore)}
-                    </div>
-                    <span className="metric-value">
-                      {typeof analysisResults.quality_analysis.normalized_metrics.content === 'number' 
-                        ? analysisResults.quality_analysis.normalized_metrics.content.toFixed(3) + '%' 
-                        : analysisResults.quality_analysis.normalized_metrics.content || 'N/A'}
-                    </span>
-                    <div className="metric-weight">
-                      <small>Weight: 15%</small>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="analysis-section">
-            <h2>Improvement Suggestions</h2>
-            <div className="analysis-content markdown-content">
-              <ReactMarkdown>{analysisResults.improvement_suggestions}</ReactMarkdown>
-            </div>
-          </div>
-          
-          <div className="analysis-section">
-            <h2>Facial Features Analysis</h2>
-            <div className="analysis-content markdown-content">
-              <ReactMarkdown>{analysisResults.face_analysis}</ReactMarkdown>
-            </div>
-          </div>
-          
-          <div className="analysis-section">
-            <h2>Body Features Analysis</h2>
-            <div className="analysis-content markdown-content">
-              <ReactMarkdown>{analysisResults.body_analysis}</ReactMarkdown>
+
+             
             </div>
           </div>
         </div>
-      )}
-      
-      <div className="navigation-buttons">
-        <Link to="/gallery" className="btn" state={{ referenceImages, generatedImage, results }}>
-          Back to Gallery
-        </Link>
-        <Link to="/" className="btn">Upload New Images</Link>
-      </div>
-    </div>
-  );
-}
 
+        {/* Suggestions Section */}
+        <div className="analysis-section">
+          <h2>Improvement Suggestions</h2>
+          <div className="analysis-content markdown-content">
+            <ReactMarkdown>{analysisResults.improvement_suggestions}</ReactMarkdown>
+          </div>
+        </div>
+
+        {/* Face Section */}
+        <div className="analysis-section">
+          <h2>Facial Features Analysis</h2>
+          <div className="analysis-content markdown-content">
+            <ReactMarkdown>{analysisResults.face_analysis}</ReactMarkdown>
+          </div>
+        </div>
+
+        {/* Body Section */}
+        <div className="analysis-section">
+          <h2>Body Features Analysis</h2>
+          <div className="analysis-content markdown-content">
+            <ReactMarkdown>{analysisResults.body_analysis}</ReactMarkdown>
+          </div>
+        </div>
+      </div>
+    )}
+
+    <div className="navigation-buttons">
+      <Link to="/gallery" className="btn" state={{ referenceImages, generatedImage, results }}>
+        Back to Gallery
+      </Link>
+      <Link to="/" className="btn">Upload New Images</Link>
+    </div>
+  </div>
+);
+}
 export default Analysis;

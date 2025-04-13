@@ -17,6 +17,7 @@ from services.background_removal import BackgroundRemover
 from services.visual_analysis import VisualAnalysisService
 from services.gemini_visual_analysis import GeminiVisualAnalysisService
 from services.piq_image_quality_detector import PIQImageQualityDetector
+from services.CLIPSimilarityService import CLIPSimilarityService
 
 # Define output directories
 OUTPUT_DIR = 'output'
@@ -68,9 +69,16 @@ try:
     image_quality_detector = PIQImageQualityDetector()
     logging.info("Successfully initialized PIQImageQualityDetector")
 except Exception as e:
-    logging.error(f"Failed to initialize SimpleAIImageQualityDetector: {e}", exc_info=True)
+    logging.error(f"Failed to initialize PIQImageQualityDetector: {e}", exc_info=True)
     image_quality_detector = None
     
+    # Initialize the Image quality detector
+try:
+    clip_service = CLIPSimilarityService()
+    logging.info("Successfully initialized CLIPSimilarityService")
+except Exception as e:
+    logging.error(f"Failed to initialize CLIPSimilarityService: {e}", exc_info=True)
+    image_quality_detector = None
     
 def clean_output_directories():
     """Clean all files from output directories before processing new images"""
@@ -334,15 +342,19 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
             quality_issues = quality_analysis.get("issues_summary", [])
             quality_metrics = quality_analysis.get("metrics", {})
             normalized_metrics = quality_analysis.get("normalized_metrics", {})
+            quality_level = quality_analysis.get("quality_level", "unknown")
             
-            logging.info(f"Image quality analysis completed. Score: {quality_score}, Acceptable: {is_acceptable}")
+            logging.info(f"Image quality analysis completed. Score: {quality_score}, Quality level: {quality_level}, Acceptable: {is_acceptable}")
             if quality_issues:
                 logging.info(f"Quality issues detected: {quality_issues}")
                 
-            # Log individual metrics
-            logging.info(f"BRISQUE: {quality_metrics.get('brisque', 'N/A')}, " + 
-                         f"NIQE: {quality_metrics.get('niqe', 'N/A')}, " +
-                         f"TV: {quality_metrics.get('total_variation', 'N/A')}")
+            # Log available metrics dynamically
+            metrics_log = []
+            for metric_name, value in quality_metrics.items():
+                metrics_log.append(f"{metric_name.upper()}: {value}")
+            
+            if metrics_log:
+                logging.info(f"Quality metrics: {', '.join(metrics_log)}")
                 
         except Exception as e:
             logging.error(f"Error in image quality analysis: {e}", exc_info=True)
@@ -351,6 +363,7 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
             quality_issues = [f"Error analyzing image quality: {str(e)}"]
             quality_metrics = {}
             normalized_metrics = {}
+            quality_level = "unknown"
             # Continue with the rest of the analysis
         
         # --- Get All Face Images ---
@@ -393,7 +406,7 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
                 reference_face_paths, generated_face_path
             )
             logging.info("Face analysis call completed.")
-            logging.info(f"Face Analysis Results: {face_analysis}")
+            #logging.info(f"Face Analysis Results: {face_analysis}")
 
         # --- Perform Body Analysis using the full images ---
         logging.info("Starting body analysis call using Gemini service...")
@@ -401,7 +414,7 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
             reference_image_paths, generated_image_path
         )
         logging.info("Body analysis call completed.")
-        logging.info(f"Body Analysis Results: {body_analysis}")
+        #logging.info(f"Body Analysis Results: {body_analysis}")
 
         # --- Check for Errors from Analysis Service ---
         # Ensure we don't have None values before checking startswith
@@ -421,13 +434,22 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
 
         # --- Generate Improvement Suggestions ---
         # Create a quality info string with detailed metrics
+        # Create dynamic metrics list for the quality info
+        metrics_info = []
+        for metric_name, value in quality_metrics.items():
+            if isinstance(value, float):
+                formatted_value = f"{value:.2f}" if value >= 0.01 else f"{value:.6f}"
+            else:
+                formatted_value = str(value)
+            metrics_info.append(f"{metric_name.upper()} Score: {formatted_value}")
+        
+        metrics_str = "\n".join(metrics_info) if metrics_info else "No metrics available"
+        
         quality_info = (
             f"Image Quality Analysis:\n"
             f"Overall Score: {quality_score:.2f}/1.00 ({['Not Acceptable', 'Acceptable'][is_acceptable]})\n"
-            f"BRISQUE Score: {quality_metrics.get('brisque', 'N/A')} (lower is better)\n"
-            f"NIQE Score: {quality_metrics.get('niqe', 'N/A')} (lower is better)\n"
-            f"Total Variation: {quality_metrics.get('total_variation', 'N/A')}\n"
-            f"Content Score: {quality_metrics.get('content', 'N/A')}\n"
+            f"Quality Level: {quality_level}\n"
+            f"{metrics_str}\n"
             f"Quality Issues: {', '.join(quality_issues) if quality_issues else 'None detected'}"
         )
         
@@ -436,7 +458,11 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
             f"{face_analysis}\n\n{quality_info}", body_analysis
         )
         logging.info("Improvement suggestions generated.")
-        logging.info(f"Service Improvement Suggestions: {improvement_suggestions}")
+        #logging.info(f"Service Improvement Suggestions: {improvement_suggestions}")
+
+        clip_score = clip_service.calculate_similarity(reference_face_paths, generated_face_path)
+        
+        
 
         # --- Return Successful Response with Quality Analysis ---
         return {
@@ -444,20 +470,17 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
             "generated_id": generated_id,
             "face_analysis": face_analysis,
             "body_analysis": body_analysis,
+            "clip_score": clip_score,
+            "overall_score": (clip_score + quality_score) / 2,
             "quality_analysis": {
                 "score": quality_score,
                 "is_acceptable": is_acceptable,
+                "quality_level": quality_level,
                 "issues": quality_issues,
-                "metrics": {
-                    "brisque": quality_metrics.get("brisque", None),
-                    "niqe": quality_metrics.get("niqe", None), 
-                    "total_variation": quality_metrics.get("total_variation", None),
-                    "content": quality_metrics.get("content", None)
-                },
+                "metrics": quality_metrics,
                 "normalized_metrics": normalized_metrics,
                 "hand_analysis": quality_analysis.get("detailed_results", {}).get("hand_analysis", {})
             },
-
             "improvement_suggestions": improvement_suggestions
         }
 

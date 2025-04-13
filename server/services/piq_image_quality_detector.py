@@ -72,11 +72,10 @@ class PIQImageQualityDetector:
             self.logger.error(f"Error loading image: {e}")
             raise
     
-    # Here's the fix for the assess_image_quality method in PIQImageQualityDetector class
 
     def assess_image_quality(self, pil_image):
         """
-        Assess overall image quality using PIQ metrics.
+        Assess overall image quality using only No-Reference (NR) PIQ metrics.
 
         Args:
             pil_image: PIL Image object
@@ -86,7 +85,6 @@ class PIQImageQualityDetector:
         """
         try:
             # Convert PIL image to tensor with proper normalization
-            # First define the transforms to apply
             transform = transforms.Compose([
                 transforms.ToTensor(),  # Scales to [0, 1]
             ])
@@ -97,76 +95,62 @@ class PIQImageQualityDetector:
             # Log shape and values for debugging
             self.logger.info(f"Tensor shape: {tensor_image.shape}, Range: {tensor_image.min().item()}-{tensor_image.max().item()}")
 
+            # Initialize metrics dictionary
+            metrics = {}
+            normalized_metrics = {}
+
             with torch.no_grad():
-                # Calculate BRISQUE score (lower is better)
+                # Calculate BRISQUE score (lower is better) - NR metric
                 try:
                     brisque_score = piq.brisque(tensor_image, data_range=1.0).item()
+                    self.logger.info(f"BRISQUE calculation successful: {brisque_score}")
+                    metrics["brisque"] = float(brisque_score)
+                    # Normalize BRISQUE (typically 0-100, lower is better)
+                    normalized_metrics["brisque"] = max(0, min(1, 1 - (brisque_score / 100.0)))
                 except Exception as e:
                     self.logger.error(f"BRISQUE calculation error: {e}")
-                    brisque_score = 50.0  # Default mid-range value
+                    metrics["brisque"] = 50.0  # Default mid-range value
+                    normalized_metrics["brisque"] = 0.5  # Default normalized value
 
-                # Calculate NIQE score (lower is better)
+                # Try to calculate CLIP-IQA with proper class implementation
                 try:
-                    niqe_score = piq.niqe(tensor_image, data_range=1.0).item()
+                    # Resize image to expected CLIP input size if necessary (224x224)
+                    if tensor_image.shape[2] != 224 or tensor_image.shape[3] != 224:
+                        resize_transform = transforms.Resize((224, 224))
+                        clip_tensor = resize_transform(tensor_image)
+                    else:
+                        clip_tensor = tensor_image
+
+                    # Use CLIPIQA class as shown in documentation
+                    clipiqa = piq.CLIPIQA(data_range=1.0)
+                    clip_score = clipiqa(clip_tensor).item()
+
+                    self.logger.info(f"CLIP-IQA calculation successful: {clip_score}")
+                    metrics["clip_iqa"] = float(clip_score)
+                    # CLIP-IQA is typically 0-1, higher is better
+                    normalized_metrics["clip_iqa"] = max(0, min(1, clip_score))
                 except Exception as e:
-                    self.logger.error(f"NIQE calculation error: {e}")
-                    niqe_score = 7.5  # Default mid-range value
+                    self.logger.error(f"CLIP-IQA calculation error: {e}")
+                    self.logger.error(f"CLIP-IQA error details: {str(e)}")
+                    # Don't add default values since this metric might not be available
 
-                # Calculate Total Variation (TV) score (lower is better for smoother images)
-                try:
-                    tv_score = piq.total_variation(tensor_image).item()
-                except Exception as e:
-                    self.logger.error(f"Total Variation calculation error: {e}")
-                    tv_score = 0.1  # Default mid-range value
-
-                # Calculate Content Score using VGG16 features
-                try:
-                    # The ContentScore might need specific input formatting
-                    content_score_fn = piq.ContentScore()
-                    # Use the same image for reference and test as we just want a baseline measure
-                    content_score = content_score_fn(tensor_image, tensor_image).item()
-                except Exception as content_err:
-                    self.logger.warning(f"Error calculating content score: {content_err}")
-                    content_score = 0.5  # Default value if calculation fails
-
-            # Log raw scores for debugging
-            self.logger.info(f"Raw scores - BRISQUE: {brisque_score}, NIQE: {niqe_score}, TV: {tv_score}, Content: {content_score}")
-
-            # Normalize scores to 0-1 range (higher is better)
-            # Typical ranges based on PIQ documentation and experiments
-            norm_brisque = max(0, min(1, 1 - (brisque_score / 100.0)))
-            norm_niqe = max(0, min(1, 1 - (niqe_score / 15.0)))
-            norm_tv = 0.5  # Default neutral value for TV
-
-            # For TV, extremely high and extremely low values are bad
-            # Very low TV: overly smooth, lacking detail
-            # Very high TV: too noisy or full of artifacts
-            if tv_score < 0.01:
-                norm_tv = 0.3  # Penalize overly smooth images
-            elif tv_score > 0.5:
-                norm_tv = 0.3  # Penalize overly noisy images
+            # Calculate overall quality score from available metrics
+            if "clip_iqa" in normalized_metrics:
+                # If we have CLIP-IQA, give it more weight as it's more perceptual
+                weights = {
+                    'brisque': 0.4,
+                    'clip_iqa': 0.6
+                }
+                overall_quality = (
+                    normalized_metrics["brisque"] * weights['brisque'] + 
+                    normalized_metrics["clip_iqa"] * weights['clip_iqa']
+                )
             else:
-                # Scale to give highest scores to middle range
-                norm_tv = 1.0 - abs((tv_score - 0.1) / 0.1)
-                norm_tv = max(0.3, min(1.0, norm_tv))
+                # If we don't have CLIP-IQA, use just BRISQUE
+                overall_quality = normalized_metrics["brisque"]
 
-            # Determine content score - higher is better
-            norm_content = max(0, min(1, content_score))
-
-            # Calculate weighted average quality score
-            weights = {
-                'brisque': 0.35,
-                'niqe': 0.35, 
-                'tv': 0.15,
-                'content': 0.15
-            }
-
-            overall_quality = (
-                norm_brisque * weights['brisque'] + 
-                norm_niqe * weights['niqe'] + 
-                norm_tv * weights['tv'] +
-                norm_content * weights['content']
-            )
+            # Ensure overall_quality is a regular float
+            overall_quality = float(overall_quality)
 
             # Determine quality level
             if overall_quality >= 0.8:
@@ -183,58 +167,31 @@ class PIQImageQualityDetector:
             # Check for specific issues
             issues = []
 
-            # Check for blur/smoothness issues
-            if norm_brisque < 0.4:
+            # Check for blur/artifacts issues based on BRISQUE
+            if normalized_metrics["brisque"] < 0.4:
                 issues.append("Image appears to have digital artifacts or unnatural patterns")
 
-            # Check for naturalness (NIQE)
-            if norm_niqe < 0.4:
-                issues.append("Image lacks natural image characteristics, appears artificially generated")
-
-            # Check for smoothness/noise issues
-            if norm_tv < 0.4:
-                if tv_score < 0.01:
-                    issues.append("Image appears overly smooth or lacks texture detail")
-                else:
-                    issues.append("Image contains excessive noise or artifacts")
-
-            # Check content score
-            if norm_content < 0.3:
-                issues.append("Image content appears unnatural or distorted")
+            # Add CLIP-IQA specific issue if available
+            if "clip_iqa" in normalized_metrics and normalized_metrics["clip_iqa"] < 0.4:
+                issues.append("Image may have perceptual quality issues according to CLIP-IQA")
 
             return {
-                "overall_quality_score": float(overall_quality),  # Ensure it's a Python float
+                "overall_quality_score": overall_quality,
                 "quality_level": quality_level,
-                "raw_scores": {
-                    "brisque": float(brisque_score),
-                    "niqe": float(niqe_score),
-                    "total_variation": float(tv_score),
-                    "content": float(content_score)
-                },
-                "normalized_scores": {
-                    "brisque": float(norm_brisque),
-                    "niqe": float(norm_niqe),
-                    "total_variation": float(norm_tv),
-                    "content": float(norm_content)
-                },
+                "raw_scores": metrics,
+                "normalized_scores": normalized_metrics,
                 "quality_issues": issues
             }
         except Exception as e:
-            self.logger.error(f"Error in image quality assessment: {e}", exc_info=True)  # Log full traceback
+            self.logger.error(f"Error in image quality assessment: {e}", exc_info=True)
             return {
                 "error": f"Failed to assess image quality: {str(e)}",
                 "overall_quality_score": 0.5,  # Neutral score on error
                 "raw_scores": {
-                    "brisque": 50.0,  # Default values
-                    "niqe": 7.5,
-                    "total_variation": 0.1,
-                    "content": 0.5
+                    "brisque": 50.0
                 },
                 "normalized_scores": {
-                    "brisque": 0.5,
-                    "niqe": 0.5,
-                    "total_variation": 0.5,
-                    "content": 0.5
+                    "brisque": 0.5
                 },
                 "quality_issues": ["Error occurred during quality assessment"]
             }
@@ -397,28 +354,28 @@ class PIQImageQualityDetector:
     def analyze_image(self, image_path_or_url):
         """
         Main method to analyze the quality of an AI-generated image.
-        
+
         Args:
             image_path_or_url: Path to an image file or a URL
-            
+
         Returns:
             Dictionary with comprehensive quality analysis results
         """
         start_time = time.time()
-        
+
         try:
             # Load image
             cv_image, pil_image = self.load_image(image_path_or_url)
-            
+
             # Run different analyses in parallel
             with ThreadPoolExecutor(max_workers=2) as executor:
                 quality_future = executor.submit(self.assess_image_quality, pil_image)
                 hands_future = executor.submit(self.analyze_hands, cv_image)
-                
+
                 # Get results
                 quality_results = quality_future.result()
                 hand_results = hands_future.result()
-            
+
             # Calculate overall score as weighted average
             # If no hands are detected, rely more on image quality scores
             if hand_results.get("num_hands_detected", 0) == 0 and "message" in hand_results:
@@ -428,40 +385,46 @@ class PIQImageQualityDetector:
             else:
                 # Hands detected, use weighted average
                 overall_score = (
-                    quality_results.get("overall_quality_score", 0) * 0.6 +
-                    hand_results.get("hand_score", 0.8) * 0.4
+                    quality_results.get("overall_quality_score", 0) * 0.7 +
+                    hand_results.get("hand_score", 0.8) * 0.3
                 )
-            
+
             # Determine if image is acceptable
             is_acceptable = overall_score >= 0.6  # Lower threshold since PIQ metrics can be strict
-            
+
             # Compile all issues
             all_issues = quality_results.get("quality_issues", []) + hand_results.get("hand_issues", [])
-            
+
+            # Get available metrics from quality_results
+            raw_scores = quality_results.get("raw_scores", {})
+            normalized_scores = quality_results.get("normalized_scores", {})
+
+            # Prepare metrics dictionary with only what's available
+            metrics = {}
+            normalized_metrics = {}
+
+            # Add each metric that exists in the results
+            for metric_name in raw_scores:
+                metrics[metric_name] = raw_scores.get(metric_name, 0)
+
+            for metric_name in normalized_scores:
+                normalized_metrics[metric_name] = normalized_scores.get(metric_name, 0)
+
             # Prepare final response
             response = {
                 "overall_score": overall_score,
                 "is_acceptable": is_acceptable,
                 "processing_time_seconds": time.time() - start_time,
                 "issues_summary": all_issues,
-                "metrics": {
-                    "brisque": quality_results.get("raw_scores", {}).get("brisque", 0),
-                    "niqe": quality_results.get("raw_scores", {}).get("niqe", 0),
-                    "total_variation": quality_results.get("raw_scores", {}).get("total_variation", 0),
-                    "content": quality_results.get("raw_scores", {}).get("content", 0),
-                },
-                "normalized_metrics": {
-                    "brisque": quality_results.get("normalized_scores", {}).get("brisque", 0),
-                    "niqe": quality_results.get("normalized_scores", {}).get("niqe", 0),
-                    "total_variation": quality_results.get("normalized_scores", {}).get("total_variation", 0),
-                    "content": quality_results.get("normalized_scores", {}).get("content", 0),
-                },
+                "metrics": metrics,
+                "normalized_metrics": normalized_metrics,
+                "quality_level": quality_results.get("quality_level", "unknown"),
                 "detailed_results": {
                     "image_quality": quality_results,
                     "hand_analysis": hand_results
                 }
             }
-            
+
             return response
         except Exception as e:
             self.logger.error(f"Error analyzing image: {e}")
@@ -472,7 +435,6 @@ class PIQImageQualityDetector:
             }
 
 
-# Also update the initialization code in __init__ to ensure proper setup
 def __init__(self):
     # Setup logging
     logging.basicConfig(
@@ -494,16 +456,29 @@ def __init__(self):
     self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     self.logger.info(f"Using device: {self.device}")
     
-    # We'll redefine the transform in the assessment method for more control
+    # Test PIQ available No-Reference metrics
+    test_metrics = {
+        "brisque": False,
+        "clip_iqa": False
+    }
     
-    # Test PIQ is working
     try:
-        # Create a simple test tensor
-        test_tensor = torch.ones((1, 3, 100, 100), device=self.device)
-        test_result = piq.brisque(test_tensor, data_range=1.0).item()
-        self.logger.info(f"PIQ test successful: BRISQUE on test tensor = {test_result}")
+        # Create simple test tensor
+        test_tensor = torch.ones((1, 3, 224, 224), device=self.device)
+        
+        # Test available metrics
+        if hasattr(piq, 'brisque'):
+            piq.brisque(test_tensor, data_range=1.0)
+            test_metrics["brisque"] = True
+            
+        if hasattr(piq, 'CLIPIQA'):
+            # Test if CLIPIQA class is available
+            clipiqa = piq.CLIPIQA(data_range=1.0)
+            clipiqa(test_tensor)
+            test_metrics["clip_iqa"] = True
+            
+        self.logger.info(f"PIQ available No-Reference metrics: {test_metrics}")
     except Exception as e:
         self.logger.error(f"PIQ test failed: {e}", exc_info=True)
-        # Continue initialization despite test failure
     
     self.logger.info("PIQ Image Quality Detector initialized successfully")
