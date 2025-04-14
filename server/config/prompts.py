@@ -231,10 +231,10 @@ class GeminiPrompts:
     @property
     def improvement_prompt(self):
         return """
-        You are an expert AI image improvement analyst specializing in facial and body feature optimization. Your task is to analyze the provided facial and body feature comparisons and generate specific, actionable improvement suggestions.
+        You are an expert AI image improvement analyst specializing in facial and body feature optimization. Your task is to analyze the provided facial and body feature comparisons texts and generate specific, actionable improvement suggestions.
 
         ### Context:
-        You will receive detailed analyses comparing reference and generated images, focusing on facial and body features. Your goal is to identify the most impactful areas for improvement.
+        You will receive detailed analyses comparing reference, focusing on facial and body features. Your goal is to identify the most impactful areas for improvement.
 
         ### Task:
         Extract up to 5 high-priority, specific, and implementable improvement suggestions based on the analyses provided. Each suggestion should:
@@ -245,7 +245,7 @@ class GeminiPrompts:
         - Be ordered by impact and implementation priority
         
         
-        IMPORTANT ROLE: dono't suggest things that are defined as close match or donot have any significant difference. if all the features are defined as close match or donot have any significant difference, just say that the images are simmilar and you donot have any specific changes to offer.
+        IMPORTANT ROLE: Follow the differences you have got only. Donot suggest any improvments of gthings that are close match according to the differences you have got in the text.
 
         ### Output Format Requirements:
         1. List up to 5 suggestions

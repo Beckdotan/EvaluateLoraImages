@@ -55,11 +55,25 @@ class GeminiVisualAnalysisService(TextualVisualAnalysisService):
             max_output_tokens=2048, # Adjust as needed for detailed analysis
         )
 
-        # Optional: Configure safety settings (adjust based on your content)
-        self.safety_settings = {
-            # Add safety settings if needed
-            
-        }
+        # Configure safety settings for image analysis
+        self.safety_settings = [
+            {
+                "category": "HARM_CATEGORY_HARASSMENT",
+                "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+                "category": "HARM_CATEGORY_HATE_SPEECH",
+                "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            },
+            {
+                "category": "HARM_CATEGORY_SEXUALLY_EXPLICIT",
+                "threshold": "BLOCK_ONLY_HIGH"  # More permissive for analyzing body features
+            },
+            {
+                "category": "HARM_CATEGORY_DANGEROUS_CONTENT",
+                "threshold": "BLOCK_MEDIUM_AND_ABOVE"
+            },
+        ]
 
 
     def _load_image(self, image_path: str) -> Optional[Image.Image]:
