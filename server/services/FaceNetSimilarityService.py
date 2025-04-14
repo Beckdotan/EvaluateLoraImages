@@ -8,7 +8,7 @@ import torch
 from facenet_pytorch import InceptionResnetV1, MTCNN
 from services.interfaces.ISimilarityService import ISimilarityService
 
-class ArcFaceSimilarityService(ISimilarityService):
+class FaceNetSimilarityService(ISimilarityService):
     def __init__(self):
         """Initialize the ArcFace similarity service with MTCNN for face detection and alignment"""
         try:

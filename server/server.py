@@ -17,7 +17,7 @@ from services.background_removal import BackgroundRemover
 from services.gemini_visual_analysis import GeminiVisualAnalysisService
 from services.piq_image_quality_detector import PIQImageQualityDetector
 from services.CLIPSimilarityService import CLIPSimilarityService
-from services.ArcFaceSimilarityService import ArcFaceSimilarityService
+from services.FaceNetSimilarityService import FaceNetSimilarityService
 
 # Define output directories
 OUTPUT_DIR = 'output'
@@ -68,10 +68,10 @@ except Exception as e:
     
     # Initialize the Image quality detector
 try:   
-    face_similarity_service = ArcFaceSimilarityService()
-    logging.info("Successfully initialized ArcFaceSimilarityService")
+    face_similarity_service = FaceNetSimilarityService()
+    logging.info("Successfully initialized FaceNetSimilarityService")
 except Exception as e:
-    logging.error(f"Failed to initialize ArcFaceSimilarityService: {e}", exc_info=True)
+    logging.error(f"Failed to initialize FaceNetSimilarityService: {e}", exc_info=True)
     face_similarity_service = None
     
 def clean_output_directories():
