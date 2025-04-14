@@ -10,7 +10,7 @@ from services.interfaces.ISimilarityService import ISimilarityService
 
 class FaceNetSimilarityService(ISimilarityService):
     def __init__(self):
-        """Initialize the ArcFace similarity service with MTCNN for face detection and alignment"""
+        """Initialize the FaceNet similarity service with MTCNN for face detection and alignment"""
         try:
             self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
@@ -20,11 +20,11 @@ class FaceNetSimilarityService(ISimilarityService):
             # Load face embedding model
             self.model = InceptionResnetV1(pretrained='vggface2').eval().to(self.device)
 
-            logging.info(f"ArcFace similarity service initialized successfully using device: {self.device}")
+            logging.info(f"FaceNet similarity service initialized successfully using device: {self.device}")
         except Exception as e:
-            logging.error(f"Error initializing ArcFace similarity service: {str(e)}")
+            logging.error(f"Error initializing FaceNet similarity service: {str(e)}")
             logging.error(traceback.format_exc())
-            raise RuntimeError("Failed to initialize ArcFace components")
+            raise RuntimeError("Failed to initialize FaceNet components")
 
     def extract_face_embedding(self, image_path):
         """Detect, align, and extract face embedding from an image"""
@@ -90,6 +90,6 @@ class FaceNetSimilarityService(ISimilarityService):
                 return 0.0
 
         except Exception as e:
-            logging.error(f"Error in ArcFace similarity calculation: {str(e)}")
+            logging.error(f"Error in FaceNet similarity calculation: {str(e)}")
             logging.error(traceback.format_exc())
             return 0.0

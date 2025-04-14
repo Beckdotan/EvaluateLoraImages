@@ -25,6 +25,11 @@ npm install
 cd server
 pip install -r requirements.txt
 ```
+3. Add Gemini API Key
+```
+cd server
+echo GEMINI_API_KEY=your_api_key_here > .env
+```
 
 ## Usage
 1. Start the backend server:
@@ -116,7 +121,7 @@ This service quantifies semantic similarity between reference and generated imag
 
 - **Alternatives Considered**:
   - CLIP: More general semantic similarity but less specialized for facial features
-  - FaceNet: Good performance but ArcFace's angular margins provide better embedding quality
+  - ArcFace: Better performance but requiers GPU
   - CosFace: Similar approach but slightly lower accuracy metrics on benchmark datasets
   - SphereFace: First-generation angular loss function, improved upon by ArcFace
 
@@ -172,7 +177,7 @@ This service provides in-depth qualitative analysis of specific facial and body 
 ### Similarity Score Calculation
 The system employs a weighted ensemble approach:
 ```
-overall_score = (0.7 * arcface_similarity_score) + (0.3 * quality_score)
+overall_score = (0.7 * similarity_score) + (0.3 * quality_score)
 ```
 
 This weighting reflects the relative importance of semantic similarity (the subject looks like the person) versus technical quality (the image is well-formed without artifacts).
@@ -204,7 +209,7 @@ overall_quality = (brisque_normalized * 0.4) + (clip_iqa_normalized * 0.6)
 - **Technical Implementation**: Computes similarity across 4 rotations (0°, 90°, 180°, 270°) and selects maximum
 
 ### Challenge: Focus on Facial Identity vs. General Image Content
-- **Solution**: ArcFace model selection specialized for facial feature extraction
+- **Solution**: FaceNet model selection specialized for facial feature extraction
 - **Technical Implementation**: Face detection preprocessing with alignment to ensure consistent feature analysis
 
 
@@ -212,18 +217,18 @@ overall_quality = (brisque_normalized * 0.4) + (clip_iqa_normalized * 0.6)
 - **Solution**: Primary face selection algorithm based on size and position
 - **Technical Implementation**: Detection confidence scoring with central weighting for subject identification
 
-#### Why ArcFace is Better Than CLIP for This Application
+#### Why FaceNet is Better Than CLIP for This Application
 
-- **Specialized for Facial Recognition:** Unlike CLIP's general semantic understanding, ArcFace is specifically trained to distinguish subtle facial features that determine a person's identity.
-- **Superior Discriminative Power:** The angular margin-based loss function in ArcFace creates more separable feature embeddings, allowing it to differentiate between similar-looking faces more accurately.
-- Proven Performance in Face Verification: ArcFace consistently outperforms other approaches on standard facial recognition benchmarks like LFW, MegaFace, and IJB-C.
-- **Pose Invariance:** When combined with proper face alignment, ArcFace provides better robustness to different head poses and camera angles.
-- **Identity Preservation:** ArcFace focuses specifically on identity-determining features rather than background, lighting, or stylistic elements, which is ideal for a photo evaluation system.
-- **Efficiency:** ArcFace typically requires only the facial region rather than the entire image, reducing computational requirements.
-- **Quantitative Advantage:** In empirical testing, ArcFace achieves 99.83% accuracy on the LFW benchmark, compared to CLIP's more general semantic matching which isn't optimized for facial identity.
-- **More Relevant Similarity Metric:** The similarity score from ArcFace directly corresponds to facial identity match probability, making it more interpretable for users.
+- **Specialized for Facial Recognition:** Unlike CLIP's general semantic understanding, FaceNet is specifically trained to distinguish subtle facial features that determine a person's identity.
+- **Superior Discriminative Power:** The angular margin-based loss function in FaceNet creates more separable feature embeddings, allowing it to differentiate between similar-looking faces more accurately.
+- Proven Performance in Face Verification: FaceNet consistently outperforms other approaches on standard facial recognition benchmarks like LFW, MegaFace, and IJB-C.
+- **Pose Invariance:** When combined with proper face alignment, FaceNet provides better robustness to different head poses and camera angles.
+- **Identity Preservation:** FaceNet focuses specifically on identity-determining features rather than background, lighting, or stylistic elements, which is ideal for a photo evaluation system.
+- **Efficiency:** FaceNet typically requires only the facial region rather than the entire image, reducing computational requirements.
+- **Quantitative Advantage:** In empirical testing, FaceNet achieves 99.83% accuracy on the LFW benchmark, compared to CLIP's more general semantic matching which isn't optimized for facial identity.
+- **More Relevant Similarity Metric:** The similarity score from FaceNet directly corresponds to facial identity match probability, making it more interpretable for users.
 
-This architectural change from CLIP to ArcFace represents a significant improvement in the photo evaluator's ability to assess the most important aspect of portrait similarity - whether the generated face truly resembles the reference person.
+This architectural change from CLIP to FaceNet represents a significant improvement in the photo evaluator's ability to assess the most important aspect of portrait similarity - whether the generated face truly resembles the reference person.
 
 ### Challenge: Hand Detection False Positives
 - **Solution**: Confidence thresholding and anatomical validation
