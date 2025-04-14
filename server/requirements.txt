@@ -16,4 +16,8 @@ piq==0.7.0
 torch>=1.7.1
 torchvision>=0.8.2
 open-clip-torch==2.32.0
+facenet-pytorch>=1.5.2
+
+
+
 

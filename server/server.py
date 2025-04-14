@@ -17,6 +17,7 @@ from services.background_removal import BackgroundRemover
 from services.gemini_visual_analysis import GeminiVisualAnalysisService
 from services.piq_image_quality_detector import PIQImageQualityDetector
 from services.CLIPSimilarityService import CLIPSimilarityService
+from services.ArcFaceSimilarityService import ArcFaceSimilarityService
 
 # Define output directories
 OUTPUT_DIR = 'output'
@@ -66,12 +67,12 @@ except Exception as e:
     image_quality_detector = None
     
     # Initialize the Image quality detector
-try:
-    clip_service = CLIPSimilarityService()
-    logging.info("Successfully initialized CLIPSimilarityService")
+try:   
+    face_similarity_service = ArcFaceSimilarityService()
+    logging.info("Successfully initialized ArcFaceSimilarityService")
 except Exception as e:
-    logging.error(f"Failed to initialize CLIPSimilarityService: {e}", exc_info=True)
-    image_quality_detector = None
+    logging.error(f"Failed to initialize ArcFaceSimilarityService: {e}", exc_info=True)
+    face_similarity_service = None
     
 def clean_output_directories():
     """Clean all files from output directories before processing new images"""
@@ -453,7 +454,7 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
         logging.info("Improvement suggestions generated.")
         #logging.info(f"Service Improvement Suggestions: {improvement_suggestions}")
 
-        clip_score = clip_service.calculate_similarity(reference_face_paths, generated_face_path)
+        face_similarity_score = face_similarity_service.calculate_similarity(reference_face_paths, generated_face_path)
         
         
 
@@ -463,11 +464,11 @@ async def analyze_images(request_data: Dict[Any, Any] = Body(...)):
             "generated_id": generated_id,
             "face_analysis": face_analysis,
             "body_analysis": body_analysis,
-            "clip_score": clip_score,
-            "overall_score": 0.7* clip_score + 0.3*quality_score,
+            "face_similarity_score": face_similarity_score,
+            "overall_score": 0.7* face_similarity_score + 0.3*quality_score,
             "quality_analysis": {
                 "score": quality_score,
-                "is_acceptable": 0.7* clip_score + 0.3*quality_score > 0.75,
+                "is_acceptable": 0.7* face_similarity_score + 0.3*quality_score > 0.75,
                 "quality_level": quality_level,
                 "issues": quality_issues,
                 "metrics": quality_metrics,

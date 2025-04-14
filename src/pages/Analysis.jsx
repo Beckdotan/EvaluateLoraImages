@@ -256,9 +256,9 @@ return (
                 <div className="metric-item">
                   <div className="metric-header">
                     <span className="metric-name">Similarity Score:</span>
-                    {renderTooltip('CLIP', 'CLIP SCORE: This score reflects how semantically similar the generated image is to the reference images, using CLIPs visual understanding. Higher scores (0-1) indicate the generated image closely matches the references in terms of content and structure.')}
+                    {renderTooltip('ArcFace', 'ArcFace SCORE: This score reflects how semantically similar the generated image face is to the reference images, using ArcFace visual understanding. Higher scores (0-1) indicate the generated image closely matches the references in terms of content and structure.')}
                   </div>
-                  <span className="metric-value">{analysisResults.clip_score.toFixed(3)*100 + "%"}</span>
+                  <span className="metric-value">{analysisResults.face_similarity_score.toFixed(3)*100 + "%"}</span>
                   <div className="metric-weight"><small>Weight: 70%</small></div>
                 </div>
 
