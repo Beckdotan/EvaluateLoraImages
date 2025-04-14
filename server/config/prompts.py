@@ -243,6 +243,9 @@ class GeminiPrompts:
         - Be technically feasible to implement
         - Focus on anatomical accuracy rather than stylistic choices
         - Be ordered by impact and implementation priority
+        
+        
+        IMPORTANT ROLE: dono't suggest things that are defined as close match or donot have any significant difference. if all the features are defined as close match or donot have any significant difference, just say that the images are simmilar and you donot have any specific changes to offer.
 
         ### Output Format Requirements:
         1. List up to 5 suggestions

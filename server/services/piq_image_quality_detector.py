@@ -13,8 +13,10 @@ import time
 from concurrent.futures import ThreadPoolExecutor
 from typing import Optional, Dict, List, Any, Union
 import torchvision.transforms as transforms
+from services.interfaces.ImageQualityDetector import ImageQualityDetector
 
-class PIQImageQualityDetector:
+
+class PIQImageQualityDetector(ImageQualityDetector):
     """
     A service that detects flaws in AI-generated images using PIQ for general
     quality assessment and MediaPipe for hand analysis.

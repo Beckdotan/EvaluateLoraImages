@@ -3,8 +3,9 @@ import torch
 import logging
 import traceback
 from PIL import Image
+from services.interfaces.SimilarityService import SimilarityService
 
-class CLIPSimilarityService:
+class CLIPSimilarityService(SimilarityService):
     def __init__(self, model_name="ViT-B-32", pretrained="laion2b_s34b_b79k"):
         try:
             self.model_name = model_name
