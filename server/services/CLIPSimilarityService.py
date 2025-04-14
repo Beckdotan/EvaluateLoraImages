@@ -24,40 +24,58 @@ class CLIPSimilarityService(SimilarityService):
     def calculate_similarity(self, reference_image_paths, generated_image_path):
         """
         Calculate average similarity score using OpenCLIP.
+        Checks multiple orientations of the generated image to find the best match.
         """
         try:
-            # Load and preprocess generated image
+            # Load generated image
             generated_image = Image.open(generated_image_path).convert("RGB")
-            generated_inputs = self.clip_preprocess(generated_image).unsqueeze(0).to(self.device)
-
-            # Extract features for generated image
+            
+            # Create rotated versions (0°, 90°, 180°, 270°)
+            orientations = [
+                generated_image,  # Original
+                generated_image.transpose(Image.ROTATE_90),  # 90° clockwise
+                generated_image.transpose(Image.ROTATE_180),  # 180°
+                generated_image.transpose(Image.ROTATE_270)   # 270° clockwise
+            ]
+            
+            # Preprocess all orientations
+            generated_inputs = torch.stack([
+                self.clip_preprocess(img).unsqueeze(0) for img in orientations
+            ]).squeeze(1).to(self.device)
+            
+            # Extract features for all orientations
             with torch.no_grad():
-                generated_features = self.clip_model.encode_image(generated_inputs)
-                generated_features /= generated_features.norm(dim=-1, keepdim=True)
-
+                generated_features_all = self.clip_model.encode_image(generated_inputs)
+                generated_features_all /= generated_features_all.norm(dim=-1, keepdim=True)
+            
             # Initialize list to store similarity scores
-            similarity_scores = []
-
+            max_similarity_scores = []
+            
             # Compare against each reference image
             for ref_path in reference_image_paths:
                 try:
                     ref_image = Image.open(ref_path).convert("RGB")
                     ref_inputs = self.clip_preprocess(ref_image).unsqueeze(0).to(self.device)
-
+                    
                     with torch.no_grad():
                         ref_features = self.clip_model.encode_image(ref_inputs)
                         ref_features /= ref_features.norm(dim=-1, keepdim=True)
-
-                    # Calculate cosine similarity
-                    similarity = torch.cosine_similarity(generated_features, ref_features).item()
-                    similarity_scores.append(similarity)
-                    logging.info(f"Similarity score for {generated_image_path} against {ref_path}: {similarity}")
+                    
+                    # Calculate cosine similarity for each orientation and take the maximum
+                    similarities = torch.cosine_similarity(
+                        generated_features_all, 
+                        ref_features.expand(generated_features_all.shape[0], -1)
+                    )
+                    max_similarity = similarities.max().item()
+                    max_similarity_scores.append(max_similarity)
+                    
+                    logging.info(f"Max similarity score for {generated_image_path} against {ref_path}: {max_similarity}")
                 except Exception as e:
                     logging.error(f"Error processing reference image {ref_path}: {str(e)}")
                     logging.error(traceback.format_exc())
-
-            return sum(similarity_scores) / len(similarity_scores) if similarity_scores else 0.0
-
+            
+            return sum(max_similarity_scores) / len(max_similarity_scores) if max_similarity_scores else 0.0
+            
         except Exception as e:
             logging.error(f"Error in OpenCLIP similarity calculation: {str(e)}")
             logging.error(traceback.format_exc())
