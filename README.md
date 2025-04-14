@@ -102,25 +102,30 @@ This service evaluates the technical and perceptual quality of generated images,
   - Higher weight to hand score when hands are detected (anatomical correctness)
   - Default to image quality when no hands present
 
-### Visual Similarity Analysis (`CLIPSimilarityService.py`)
+### Visual Similarity Analysis (`ArcFaceService.py`)
 This service quantifies semantic similarity between reference and generated images.
 
-#### Library Selection: OpenCLIP
+#### Library Selection: ArcFace
+
 - **Strengths**:
-  - Contrastive learning approach captures semantic similarities
-  - Trained on diverse image-text pairs for robust representation
-  - Works across different visual styles and lighting conditions
-  - Measures "essence" similarity rather than pixel matching
+  - Specifically designed for facial recognition with state-of-the-art performance
+  - Angular margin-based loss function creates more discriminative facial embeddings
+  - Excels at capturing subtle facial identity features across different expressions and angles
+  - Outperforms contrastive learning approaches for human face comparison
+  - Higher precision in face verification and identification tasks
 
 - **Alternatives Considered**:
-  - **VGG/ResNet Feature Comparison**: More sensitive to superficial differences, less semantic understanding
-  - **LPIPS**: Perceptual loss that requires more computation for similar results
-  - **DINO**: Self-supervised approach, potentially stronger for certain domains but less general
+  - CLIP: More general semantic similarity but less specialized for facial features
+  - FaceNet: Good performance but ArcFace's angular margins provide better embedding quality
+  - CosFace: Similar approach but slightly lower accuracy metrics on benchmark datasets
+  - SphereFace: First-generation angular loss function, improved upon by ArcFace
 
-- **Design Decision: Multi-orientation Analysis**
-  - Calculates similarity across multiple image orientations (0°, 90°, 180°, 270°)
-  - Selects maximum similarity to account for orientation mismatches
-  - Enables robust comparison regardless of image capture conditions
+
+- **Design Decision: Face Alignment Preprocessing**
+  - Implements facial landmark detection for consistent face alignment
+  - Normalizes face orientation before embedding generation
+  - Reduces impact of head pose variation on similarity scoring
+  - Enables more robust comparison across different portrait styles
 
 ### LLM-based Feature Analysis (`gemini_visual_analysis.py`)
 This service provides in-depth qualitative analysis of specific facial and body features.
@@ -167,7 +172,7 @@ This service provides in-depth qualitative analysis of specific facial and body 
 ### Similarity Score Calculation
 The system employs a weighted ensemble approach:
 ```
-overall_score = (0.7 * clip_similarity_score) + (0.3 * quality_score)
+overall_score = (0.7 * arcface_similarity_score) + (0.3 * quality_score)
 ```
 
 This weighting reflects the relative importance of semantic similarity (the subject looks like the person) versus technical quality (the image is well-formed without artifacts).
@@ -198,9 +203,27 @@ overall_quality = (brisque_normalized * 0.4) + (clip_iqa_normalized * 0.6)
 - **Solution**: Multi-orientation CLIP comparison that automatically identifies optimal alignment
 - **Technical Implementation**: Computes similarity across 4 rotations (0°, 90°, 180°, 270°) and selects maximum
 
-### Challenge: HEIC Image Format Support
-- **Solution**: Client-side conversion with orientation preservation
-- **Technical Implementation**: heic2any library with canvas-based orientation correction
+### Challenge: Focus on Facial Identity vs. General Image Content
+- **Solution**: ArcFace model selection specialized for facial feature extraction
+- **Technical Implementation**: Face detection preprocessing with alignment to ensure consistent feature analysis
+
+
+### Challenge: Handling Multiple Faces in Images
+- **Solution**: Primary face selection algorithm based on size and position
+- **Technical Implementation**: Detection confidence scoring with central weighting for subject identification
+
+#### Why ArcFace is Better Than CLIP for This Application
+
+- **Specialized for Facial Recognition:** Unlike CLIP's general semantic understanding, ArcFace is specifically trained to distinguish subtle facial features that determine a person's identity.
+- **Superior Discriminative Power:** The angular margin-based loss function in ArcFace creates more separable feature embeddings, allowing it to differentiate between similar-looking faces more accurately.
+- Proven Performance in Face Verification: ArcFace consistently outperforms other approaches on standard facial recognition benchmarks like LFW, MegaFace, and IJB-C.
+- **Pose Invariance:** When combined with proper face alignment, ArcFace provides better robustness to different head poses and camera angles.
+- **Identity Preservation:** ArcFace focuses specifically on identity-determining features rather than background, lighting, or stylistic elements, which is ideal for a photo evaluation system.
+- **Efficiency:** ArcFace typically requires only the facial region rather than the entire image, reducing computational requirements.
+- **Quantitative Advantage:** In empirical testing, ArcFace achieves 99.83% accuracy on the LFW benchmark, compared to CLIP's more general semantic matching which isn't optimized for facial identity.
+- **More Relevant Similarity Metric:** The similarity score from ArcFace directly corresponds to facial identity match probability, making it more interpretable for users.
+
+This architectural change from CLIP to ArcFace represents a significant improvement in the photo evaluator's ability to assess the most important aspect of portrait similarity - whether the generated face truly resembles the reference person.
 
 ### Challenge: Hand Detection False Positives
 - **Solution**: Confidence thresholding and anatomical validation
