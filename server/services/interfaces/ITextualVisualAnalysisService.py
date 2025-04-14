@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any, List
 
-class TextualVisualAnalysisService(ABC):
+class ITextualVisualAnalysisService(ABC):
            
     @abstractmethod
     def analyze_face_features(self, reference_paths: List[str], generated_path: str) -> Dict[str, Any]:

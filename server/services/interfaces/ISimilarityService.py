@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 
-class SimilarityService(ABC):
+class ISimilarityService(ABC):
     @abstractmethod
     def calculate_similarity(self, image_path1: str, image_path2: str) -> Dict[str, Any]:
         """

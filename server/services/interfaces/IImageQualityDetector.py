@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Dict, Any
 
-class ImageQualityDetector(ABC):
+class IImageQualityDetector(ABC):
     @abstractmethod
     def assess_image_quality(self, image_path: str) -> Dict[str, Any]:
         """

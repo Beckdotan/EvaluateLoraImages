@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 import google.generativeai as genai
 from google.generativeai import types  
 from config.prompts import GeminiPrompts  # Import the prompts class
-from services.interfaces.TextualVisualAnalysisService import TextualVisualAnalysisService
+from services.interfaces.ITextualVisualAnalysisService import ITextualVisualAnalysisService
 
 # Load environment variables (especially GOOGLE_API_KEY)
 load_dotenv()
@@ -26,7 +26,7 @@ MODEL_NAME = "gemini-1.5-flash-latest" # Using Flash for speed/cost balance
 FACES_DIR = os.path.join('output', 'faces')
 NO_BG_DIR = os.path.join('output', 'no_background')
 
-class GeminiVisualAnalysisService(TextualVisualAnalysisService):
+class GeminiVisualAnalysisService(ITextualVisualAnalysisService):
     def __init__(self):
         """
         Initializes the Visual Analysis Service using the Google Gemini API.
